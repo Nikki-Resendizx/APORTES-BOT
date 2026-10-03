@@ -55,7 +55,7 @@ async function sendWelcome(ctx) {
 
   const text = vars(
     db.getWelcome() ||
-      "👋 Bienvenido.\\n\\nEnvía tu mensaje y será enviado al equipo.\\n\\n#nombre • #username • #userid",
+      "👋 Bienvenido.\n\nEnvía tu mensaje y será enviado al equipo.\n\n#nombre • #username • #userid",
     ctx.from
   );
 
@@ -80,29 +80,29 @@ bot.help((ctx) => ctx.reply("ℹ️ Envía cualquier mensaje para contactar al e
 
 bot.action("INFO", async (ctx) => {
   await ctx.answerCbQuery();
-  await ctx.reply("👤 " + fullName(ctx.from) + "\\n🆔 " + ctx.from.id);
+  await ctx.reply("👤 " + fullName(ctx.from) + "\n🆔 " + ctx.from.id);
 });
 
 bot.command("info", async (ctx) => {
   const user = db.getUser(ctx.from.id);
   await ctx.reply(
     "👤 " + fullName(ctx.from) +
-    "\\n🆔 " + ctx.from.id +
-    "\\n🧵 Tema: " + (user?.threadId || "no creado")
+    "\n🆔 " + ctx.from.id +
+    "\n🧵 Tema: " + (user?.threadId || "no creado")
   );
 });
 
-bot.command("status", (ctx) => ctx.reply("🤖 APORTES-BOT activo.\\n🕐 " + TIMEZONE));
+bot.command("status", (ctx) => ctx.reply("🤖 APORTES-BOT activo.\n🕐 " + TIMEZONE));
 bot.command("cancel", (ctx) => ctx.reply("❌ Operación cancelada."));
 
 bot.command("admin", (ctx) => {
   if (!isAdmin(ctx.from.id)) return ctx.reply("⛔ Solo administradores.");
   return ctx.reply(
-    "⚙️ ADMIN\\n\\n" +
-    "/setwelcome TEXTO\\n" +
-    "/setwelcome_media\\n" +
-    "/ban ID\\n" +
-    "/unban ID\\n" +
+    "⚙️ ADMIN\n\n" +
+    "/setwelcome TEXTO\n" +
+    "/setwelcome_media\n" +
+    "/ban ID\n" +
+    "/unban ID\n" +
     "/status"
   );
 });
@@ -121,7 +121,7 @@ bot.command("setwelcome", (ctx) => {
   }
 
   return ctx.reply(
-    "Uso: /setwelcome TEXTO\\n\\n" +
+    "Uso: /setwelcome TEXTO\n\n" +
     "Para una bienvenida multimedia, responde al mensaje en el grupo de foro y usa /setwelcome_media."
   );
 });
