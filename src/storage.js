@@ -8,9 +8,9 @@ function save(){ fs.mkdirSync(dir,{recursive:true}); fs.writeFileSync(file,JSON.
 function getUser(id){ return state.users[String(id)] || null; }
 function setUser(id,v){ state.users[String(id)]=v; save(); }
 function findByThread(thread){ return Object.values(state.users).find(x=>x.threadId===Number(thread)); }
-function getWelcome(){ return state.welcome; }
+function setWelcomeSource(v){ state.welcomeSource=v; save(); }\nfunction getWelcomeSource(){ return state.welcomeSource || null; }\nfunction getWelcome(){ return state.welcome; }
 function setWelcome(v){ state.welcome=v; save(); }
 function isBanned(id){ return state.bans.includes(Number(id)); }
 function ban(id){ if(!state.bans.includes(Number(id))) state.bans.push(Number(id)); save(); }
 function unban(id){ state.bans=state.bans.filter(x=>x!==Number(id)); save(); }
-module.exports={getUser,setUser,findByThread,getWelcome,setWelcome,isBanned,ban,unban};
+module.exports={getUser,setUser,findByThread,getWelcome,setWelcome,setWelcomeSource,getWelcomeSource,isBanned,ban,unban};
