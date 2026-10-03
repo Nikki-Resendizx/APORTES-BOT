@@ -166,7 +166,7 @@ bot.action("W_PREVIEW", async (ctx) => {
     try {
       await ctx.telegram.copyMessage(ctx.chat.id, source.chatId, source.messageId, { reply_markup: welcomeKeyboard().reply_markup });
     } catch {
-      await ctx.reply(text, welcomeKeyboard());
+      await ctx.reply(text, { ...welcomeKeyboard(), parse_mode: "HTML" });
     }
   } else {
     await ctx.reply(text, welcomeKeyboard());
@@ -284,7 +284,7 @@ bot.on("message", async (ctx, next) => {
       const quick = db.getQuickResponse(command);
       if (quick) {
         if (quick.source) return ctx.telegram.copyMessage(ctx.chat.id, quick.source.chatId, quick.source.messageId);
-        return ctx.reply(vars(quick.text, ctx.from));
+        return ctx.reply(vars(quick.text, ctx.from), { parse_mode: "HTML" });
       }
       return;
     }
