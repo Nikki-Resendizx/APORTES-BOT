@@ -3,7 +3,9 @@ require("dotenv").config();
 const { Telegraf, Markup } = require("telegraf");
 const { BOT_TOKEN, STORE_CHAT_ID, ADMIN_IDS, TIMEZONE } = require("./config");
 const db = require("./storage");
-const { fullName, vars, topicName, registration } = require("./utils");
+const {
+  fullName, varsHtml, hasVars, formatMessageHtml, topicName, registration
+} = require("./utils");
 
 if (!BOT_TOKEN) throw new Error("Falta BOT_TOKEN");
 if (!STORE_CHAT_ID) throw new Error("Falta STORE_CHAT_ID");
@@ -12,15 +14,25 @@ const bot = new Telegraf(BOT_TOKEN);
 const isAdmin = (id) => ADMIN_IDS.includes(Number(id));
 const pending = new Map();
 
+function styleButton(text, url, callback_data, style) {
+  return {
+    text,
+    style: style || undefined,
+    ...(url ? { url } : { callback_data: callback_data || "INFO" })
+  };
+}
+
+function keyboardFromButtons(buttons = []) {
+  const rows = buttons.map((b) => [styleButton(b.text, b.url, b.callback, b.style)]);
+  return rows.length ? { inline_keyboard: rows } : undefined;
+}
+
 function welcomeKeyboard() {
-  const rows = db.getWelcomeButtons().map((b) => [{
-    text: b.text,
-    style: b.style || undefined,
-    ...(b.url ? { url: b.url } : { callback_data: b.callback || "INFO" })
-  }]);
-  return rows.length ? Markup.inlineKeyboard(rows) : Markup.inlineKeyboard([
-    [{ text: "ℹ️ Información", callback_data: "INFO", style: "primary" }]
-  ]);
+  return Markup.inlineKeyboard(
+    db.getWelcomeButtons().length
+      ? db.getWelcomeButtons().map((b) => [styleButton(b.text, b.url, b.callback, b.style)])
+      : [[styleButton("ℹ️ Información", null, "INFO", "primary")]]
+  );
 }
 
 function welcomeMenu() {
@@ -33,13 +45,80 @@ function welcomeMenu() {
   ]);
 }
 
-function quickMenu() {
+function quickMenu(command) {
   return Markup.inlineKeyboard([
-    [Markup.button.callback("➕ Crear comando", "QR_ADD")],
-    [Markup.button.callback("📋 Mis comandos", "QR_LIST")],
-    [Markup.button.callback("🗑️ Eliminar comando", "QR_DELETE")],
-    [Markup.button.callback("🔙 Volver", "W_MENU")]
+    [Markup.button.callback("📝 Texto", "QR_TEXT")],
+    [Markup.button.callback("🖼️ Multimedia + texto", "QR_MEDIA")],
+    [Markup.button.callback("🔘 Botones Style", "QR_BUTTONS")],
+    [Markup.button.callback("👁️ Vista previa", "QR_PREVIEW")],
+    [Markup.button.callback("✅ Guardar", "QR_DONE")],
+    [Markup.button.callback("🔙 Volver", "QR_MENU")]
   ]);
+}
+
+function quickButtonMenu() {
+  return Markup.inlineKeyboard([
+    [Markup.button.callback("➕ Agregar botón", "QR_BTN_ADD")],
+    [Markup.button.callback("🗑️ Borrar botones", "QR_BTN_CLEAR")],
+    [Markup.button.callback("🔙 Volver", "QR_CONFIG")]
+  ]);
+}
+
+function sourceFromMessage(ctx) {
+  const m = ctx.message;
+  const isMedia = !!(m.photo || m.video || m.document || m.audio || m.voice || m.animation);
+  const text = m.text ?? m.caption ?? "";
+  const entities = m.entities ?? m.caption_entities ?? [];
+  return {
+    chatId: ctx.chat.id,
+    messageId: m.message_id,
+    text,
+    entities,
+    media: isMedia
+  };
+}
+
+function sourceHasVars(source) {
+  return !!source && hasVars(source.text);
+}
+
+function defaultWelcome() {
+  return {
+    text: "👋 Bienvenido.\n\nEnvía tu mensaje y será enviado al equipo.\n\n{nombre} • {username} • {userid}",
+    entities: []
+  };
+}
+
+async function sendStoredSource(ctx, source, user, buttons) {
+  if (!source) return false;
+  const reply_markup = keyboardFromButtons(buttons);
+
+  if (!sourceHasVars(source)) {
+    try {
+      await ctx.telegram.copyMessage(ctx.chat.id, source.chatId, source.messageId, { reply_markup });
+      return true;
+    } catch (error) {
+      console.error("copy stored source:", error);
+    }
+  }
+
+  const html = formatMessageHtml(source.text || "", source.entities || [], user);
+  if (!source.media) {
+    await ctx.reply(html || " ", { parse_mode: "HTML", reply_markup });
+    return true;
+  }
+
+  try {
+    await ctx.telegram.copyMessage(ctx.chat.id, source.chatId, source.messageId, {
+      caption: html || undefined,
+      parse_mode: "HTML",
+      reply_markup
+    });
+    return true;
+  } catch (error) {
+    console.error("copy stored media:", error);
+    return false;
+  }
 }
 
 async function ensure(ctx) {
@@ -54,14 +133,18 @@ async function ensure(ctx) {
 
   try {
     const photos = await ctx.telegram.getUserProfilePhotos(ctx.from.id, { limit: 1 });
+    const opts = { message_thread_id: user.threadId, parse_mode: "HTML" };
     if (photos.total_count && photos.photos[0]?.[0]) {
-      await ctx.telegram.sendPhoto(STORE_CHAT_ID, photos.photos[0][0].file_id, { caption: info, message_thread_id: user.threadId });
+      await ctx.telegram.sendPhoto(STORE_CHAT_ID, photos.photos[0][0].file_id, { ...opts, caption: info });
     } else {
-      await ctx.telegram.sendMessage(STORE_CHAT_ID, info, { message_thread_id: user.threadId });
+      await ctx.telegram.sendMessage(STORE_CHAT_ID, info, opts);
     }
   } catch (error) {
     console.error("registration notice:", error);
-    await ctx.telegram.sendMessage(STORE_CHAT_ID, info, { message_thread_id: user.threadId }).catch(() => {});
+    await ctx.telegram.sendMessage(STORE_CHAT_ID, info, {
+      message_thread_id: user.threadId,
+      parse_mode: "HTML"
+    }).catch(() => {});
   }
   return user;
 }
@@ -70,19 +153,13 @@ async function sendWelcome(ctx) {
   const user = await ensure(ctx);
   if (!user) return ctx.reply("🚫 No tienes acceso a este bot.");
 
-  const text = vars(db.getWelcome() || "👋 Bienvenido.\n\nEnvía tu mensaje y será enviado al equipo.\n\n#nombre • #username • #userid", ctx.from);
-  const source = db.getWelcomeSource();
+  const stored = db.getWelcomeSource();
+  if (stored && await sendStoredSource(ctx, stored, ctx.from, db.getWelcomeButtons())) return;
 
-  if (source) {
-    try {
-      await ctx.telegram.copyMessage(ctx.chat.id, source.chatId, source.messageId, { caption: text, parse_mode: "HTML", reply_markup: welcomeKeyboard().reply_markup });
-      return;
-    } catch (error) {
-      console.error("welcome media:", error);
-    }
-  }
-
-  return ctx.reply(text, welcomeKeyboard());
+  const legacy = db.getWelcome();
+  const source = typeof legacy === "string" ? { text: legacy, entities: [] } : (legacy || defaultWelcome());
+  const html = formatMessageHtml(source.text || "", source.entities || [], ctx.from);
+  return ctx.reply(html, { parse_mode: "HTML", ...welcomeKeyboard() });
 }
 
 bot.start(sendWelcome);
@@ -91,7 +168,6 @@ bot.action("INFO", async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.reply("👤 " + fullName(ctx.from) + "\n🆔 " + ctx.from.id);
 });
-
 bot.command("info", async (ctx) => {
   const user = db.getUser(ctx.from.id);
   await ctx.reply("👤 " + fullName(ctx.from) + "\n🆔 " + ctx.from.id + "\n🧵 Tema: " + (user?.threadId || "no creado"));
@@ -103,7 +179,6 @@ bot.command("admin", (ctx) => {
   if (!isAdmin(ctx.from.id)) return ctx.reply("⛔ Solo administradores.");
   return ctx.reply("⚙️ PANEL DE ADMINISTRACIÓN", welcomeMenu());
 });
-
 bot.command("setwelcome", (ctx) => {
   if (!isAdmin(ctx.from.id)) return ctx.reply("⛔ Solo administradores.");
   return ctx.reply("👋 CONFIGURAR BIENVENIDA\n\nElige qué quieres configurar:", welcomeMenu());
@@ -118,7 +193,7 @@ bot.action("W_TXT", async (ctx) => {
   await ctx.answerCbQuery();
   pending.set(ctx.from.id, { type: "welcome_text" });
   return ctx.reply(
-    "📝 Envía ahora el texto de bienvenida.\n\nVariables disponibles:\n#mencion\n#nombre\n#username\n#userid\n\nPuedes usar formato de Telegram.",
+    "📝 Envía el mensaje de bienvenida exactamente como quieres verlo.\n\nTelegram conservará el formato que tenga el mensaje, incluidos artículos/bloques desplegables, citas, enlaces, spoilers, código, listas y emojis personalizados.\n\nVariables: {mencion} {nombre} {username} {userid}",
     Markup.inlineKeyboard([[Markup.button.callback("❌ Cancelar", "W_MENU")]])
   );
 });
@@ -126,15 +201,18 @@ bot.action("W_TXT", async (ctx) => {
 bot.action("W_MEDIA", async (ctx) => {
   await ctx.answerCbQuery();
   pending.set(ctx.from.id, { type: "welcome_media" });
-  return ctx.reply("🖼️ Envía ahora la foto, video, documento, audio, sticker o multimedia que quieras usar como bienvenida.\n\nEl mensaje recibido se guardará como plantilla de bienvenida.");
+  return ctx.reply(
+    "🖼️ Envía la multimedia CON el texto/caption que quieras usar.\n\nEl caption conservará el formato de Telegram y admite: {mencion} {nombre} {username} {userid}.",
+    Markup.inlineKeyboard([[Markup.button.callback("❌ Cancelar", "W_MENU")]])
+  );
 });
 
 bot.action("W_BUTTONS", async (ctx) => {
   await ctx.answerCbQuery();
   const buttons = db.getWelcomeButtons();
-  const lines = buttons.length ? buttons.map((b, i) => (i + 1) + ". " + b.text + (b.url ? " → " + b.url : "")).join("\n") : "No hay botones configurados.";
+  const lines = buttons.length ? buttons.map((b, i) => (i + 1) + ". " + b.text + (b.url ? " → " + b.url : "") + (b.style ? " [" + b.style + "]" : "")).join("\n") : "No hay botones configurados.";
   return ctx.reply(
-    "🔘 BOTONES DE BIENVENIDA\n\n" + lines + "\n\nPara agregar uno usa:\n#p Texto | https://ejemplo.com\n#r Texto | https://ejemplo.com\n#g Texto | https://ejemplo.com\n\n#p = azul • #r = rojo • #g = verde",
+    "🔘 BOTONES DE BIENVENIDA\n\n" + lines + "\n\nFormato:\n#p Texto | https://ejemplo.com\n#r Texto | https://ejemplo.com\n#g Texto | https://ejemplo.com\n\n#p azul • #r rojo • #g verde",
     Markup.inlineKeyboard([
       [Markup.button.callback("➕ Agregar botón", "W_BTN_ADD")],
       [Markup.button.callback("🗑️ Borrar todos", "W_BTN_CLEAR")],
@@ -142,123 +220,176 @@ bot.action("W_BUTTONS", async (ctx) => {
     ])
   );
 });
-
 bot.action("W_BTN_ADD", async (ctx) => {
   await ctx.answerCbQuery();
   pending.set(ctx.from.id, { type: "welcome_button" });
-  return ctx.reply("🔘 Envía el botón con este formato:\n\n#p Texto del botón | https://ejemplo.com\n\nEstilos:\n#p = azul (primary)\n#r = rojo (danger)\n#g = verde (success)\n\nSi no pones estilo, se usará el estilo predeterminado de Telegram.");
+  return ctx.reply("🔘 Envía:\n#p Texto | https://ejemplo.com\n\n#p = primary azul\n#r = danger rojo\n#g = success verde");
 });
-
 bot.action("W_BTN_CLEAR", async (ctx) => {
   await ctx.answerCbQuery();
   db.setWelcomeButtons([]);
   return ctx.reply("✅ Botones eliminados.", welcomeMenu());
 });
-
 bot.action("W_VARS", async (ctx) => {
   await ctx.answerCbQuery();
-  return ctx.reply("🧩 VARIABLES\n\n#mencion → nombre completo\n#nombre → nombre completo\n#username → @username\n#userid → ID de Telegram");
+  return ctx.reply("🧩 VARIABLES\n\n{mencion} → mención clicable del usuario\n{nombre} → nombre completo\n{username} → @username\n{userid} → ID de Telegram");
 });
-
 bot.action("W_PREVIEW", async (ctx) => {
   await ctx.answerCbQuery();
-  const source = db.getWelcomeSource();
-  const text = vars(db.getWelcome() || "👋 Bienvenido.\n\nConfigura tu bienvenida desde /setwelcome.", ctx.from);
-  if (source) {
-    try {
-      await ctx.telegram.copyMessage(ctx.chat.id, source.chatId, source.messageId, { reply_markup: welcomeKeyboard().reply_markup });
-    } catch {
-      await ctx.reply(text, { ...welcomeKeyboard(), parse_mode: "HTML" });
-    }
-  } else {
-    await ctx.reply(text, welcomeKeyboard());
-  }
+  const fakeUser = ctx.from;
+  const stored = db.getWelcomeSource();
+  if (stored && await sendStoredSource(ctx, stored, fakeUser, db.getWelcomeButtons())) return ctx.reply("👆 Vista previa actual.", welcomeMenu());
+  const legacy = db.getWelcome();
+  const source = typeof legacy === "string" ? { text: legacy, entities: [] } : (legacy || defaultWelcome());
+  await ctx.reply(formatMessageHtml(source.text, source.entities || [], fakeUser), { parse_mode: "HTML", ...welcomeKeyboard() });
   return ctx.reply("👆 Vista previa actual.", welcomeMenu());
 });
-
 bot.action("W_DELETE", async (ctx) => {
   await ctx.answerCbQuery();
   db.clearWelcome();
   pending.delete(ctx.from.id);
-  return ctx.reply("🗑️ Bienvenida eliminada. El bot volverá a usar la bienvenida predeterminada.", welcomeMenu());
+  return ctx.reply("🗑️ Bienvenida eliminada. Se usará la predeterminada.", welcomeMenu());
 });
 
 bot.action("QR_MENU", async (ctx) => {
   await ctx.answerCbQuery();
-  return ctx.editMessageText("⚡ RESPUESTAS RÁPIDAS\n\nCrea comandos personalizados que el bot responderá automáticamente.", quickMenu());
+  return ctx.editMessageText("⚡ RESPUESTAS RÁPIDAS\n\nCrea una palabra o comando y luego configura su contenido desde un submenú.", Markup.inlineKeyboard([
+    [Markup.button.callback("➕ Crear palabra/comando", "QR_ADD")],
+    [Markup.button.callback("📋 Mis respuestas", "QR_LIST")],
+    [Markup.button.callback("🗑️ Eliminar", "QR_DELETE")],
+    [Markup.button.callback("🔙 Volver", "W_MENU")]
+  ]));
 });
-
 bot.action("QR_ADD", async (ctx) => {
   await ctx.answerCbQuery();
   pending.set(ctx.from.id, { type: "quick_command" });
-  return ctx.reply("⚡ CREAR COMANDO\n\nEscribe el nombre sin /\nEjemplo: contacto");
+  return ctx.reply("1️⃣ Escribe la palabra o comando que activará la respuesta.\n\nEjemplos: contacto  o  /contacto");
 });
-
 bot.action("QR_LIST", async (ctx) => {
   await ctx.answerCbQuery();
   const items = Object.entries(db.getQuickResponses());
-  if (!items.length) return ctx.reply("📋 No hay comandos personalizados.", quickMenu());
-  const text = items.map(([cmd, v]) => "• /" + cmd + (v.text ? " — " + v.text.slice(0, 50) : " — multimedia")).join("\n");
-  return ctx.reply("📋 COMANDOS PERSONALIZADOS\n\n" + text, quickMenu());
+  if (!items.length) return ctx.reply("📋 No hay respuestas rápidas.", quickMenu());
+  const text = items.map(([cmd, v]) => {
+    const parts = [];
+    if (v.textSource || v.text) parts.push("texto");
+    if (v.mediaSource || v.source) parts.push("multimedia");
+    if (v.buttons?.length) parts.push(v.buttons.length + " botón(es)");
+    return "• " + (cmd.startsWith("/") ? cmd : "/" + cmd) + " — " + (parts.join(" + ") || "vacía");
+  }).join("\n");
+  return ctx.reply("📋 RESPUESTAS RÁPIDAS\n\n" + text, Markup.inlineKeyboard([
+    [Markup.button.callback("➕ Crear otra", "QR_ADD")],
+    [Markup.button.callback("🔙 Volver", "QR_MENU")]
+  ]));
 });
-
 bot.action("QR_DELETE", async (ctx) => {
   await ctx.answerCbQuery();
-  const items = Object.keys(db.getQuickResponses());
-  if (!items.length) return ctx.reply("No hay comandos para eliminar.", quickMenu());
+  if (!Object.keys(db.getQuickResponses()).length) return ctx.reply("No hay respuestas para eliminar.", quickMenu());
   pending.set(ctx.from.id, { type: "quick_delete" });
-  return ctx.reply(
-    "🗑️ Escribe el comando que quieres eliminar.\nEjemplo: contacto",
-    Markup.inlineKeyboard([[Markup.button.callback("🔙 Volver", "QR_MENU")]])
-  );
+  return ctx.reply("🗑️ Escribe la palabra/comando que quieres eliminar.");
+});
+
+bot.action("QR_CONFIG", async (ctx) => {
+  await ctx.answerCbQuery();
+  const p = pending.get(ctx.from.id);
+  if (!p?.command) return ctx.reply("❌ No hay una respuesta en edición.");
+  return ctx.editMessageText("⚡ CONFIGURAR: " + p.command + "\n\nSelecciona qué quieres agregar o modificar:", quickMenu(p.command));
+});
+bot.action("QR_TEXT", async (ctx) => {
+  await ctx.answerCbQuery();
+  const p = pending.get(ctx.from.id);
+  if (!p?.command) return ctx.reply("❌ No hay una respuesta en edición.");
+  pending.set(ctx.from.id, { ...p, type: "quick_text" });
+  return ctx.reply("📝 Envía el texto. Se conservará el formato exacto de Telegram, incluido el formato de artículos/bloques desplegables, citas, listas, enlaces, código, spoilers y emojis personalizados.");
+});
+bot.action("QR_MEDIA", async (ctx) => {
+  await ctx.answerCbQuery();
+  const p = pending.get(ctx.from.id);
+  if (!p?.command) return ctx.reply("❌ No hay una respuesta en edición.");
+  pending.set(ctx.from.id, { ...p, type: "quick_media" });
+  return ctx.reply("🖼️ Envía la multimedia CON su caption/texto. El caption conservará el formato de Telegram y acepta {mencion}, {nombre}, {username} y {userid}.");
+});
+bot.action("QR_BUTTONS", async (ctx) => {
+  await ctx.answerCbQuery();
+  const p = pending.get(ctx.from.id);
+  if (!p?.command) return ctx.reply("❌ No hay una respuesta en edición.");
+  return ctx.reply("🔘 BOTONES STYLE PARA " + p.command, quickButtonMenu());
+});
+bot.action("QR_BTN_ADD", async (ctx) => {
+  await ctx.answerCbQuery();
+  const p = pending.get(ctx.from.id);
+  if (!p?.command) return ctx.reply("❌ No hay una respuesta en edición.");
+  pending.set(ctx.from.id, { ...p, type: "quick_button" });
+  return ctx.reply("🔘 Envía:\n#p Texto | https://ejemplo.com\n#r Texto | https://ejemplo.com\n#g Texto | https://ejemplo.com");
+});
+bot.action("QR_BTN_CLEAR", async (ctx) => {
+  await ctx.answerCbQuery();
+  const p = pending.get(ctx.from.id);
+  if (!p?.command) return ctx.reply("❌ No hay una respuesta en edición.");
+  db.setQuickResponse(p.command, { buttons: [] });
+  return ctx.reply("✅ Botones eliminados.", quickButtonMenu());
+});
+bot.action("QR_PREVIEW", async (ctx) => {
+  await ctx.answerCbQuery();
+  const p = pending.get(ctx.from.id);
+  if (!p?.command) return ctx.reply("❌ No hay una respuesta en edición.");
+  const quick = db.getQuickResponse(p.command);
+  if (!quick) return ctx.reply("❌ No existe esa respuesta.");
+  const source = quick.mediaSource || quick.source;
+  if (source && await sendStoredSource(ctx, source, ctx.from, quick.buttons || [])) return;
+  const textSource = quick.textSource || (quick.text ? { text: quick.text, entities: [] } : null);
+  if (textSource) await ctx.reply(formatMessageHtml(textSource.text, textSource.entities || [], ctx.from), { parse_mode: "HTML", ...Markup.inlineKeyboard(quick.buttons || []) });
+  else await ctx.reply("⚠️ La respuesta aún no tiene contenido.");
+});
+bot.action("QR_DONE", async (ctx) => {
+  await ctx.answerCbQuery();
+  const p = pending.get(ctx.from.id);
+  if (!p?.command) return ctx.reply("❌ No hay una respuesta en edición.");
+  pending.delete(ctx.from.id);
+  return ctx.reply("✅ Respuesta " + p.command + " guardada.", quickMenu());
 });
 
 bot.command("ban", (ctx) => {
   if (!isAdmin(ctx.from.id)) return ctx.reply("⛔ Solo administradores.");
   const id = Number((ctx.message?.text || "").split(/\s+/)[1]);
   if (!id) return ctx.reply("Uso: /ban ID");
-  db.ban(id);
-  return ctx.reply("🚫 Usuario bloqueado.");
+  db.ban(id); return ctx.reply("🚫 Usuario bloqueado.");
 });
-
 bot.command("unban", (ctx) => {
   if (!isAdmin(ctx.from.id)) return ctx.reply("⛔ Solo administradores.");
   const id = Number((ctx.message?.text || "").split(/\s+/)[1]);
   if (!id) return ctx.reply("Uso: /unban ID");
-  db.unban(id);
-  return ctx.reply("✅ Usuario desbloqueado.");
+  db.unban(id); return ctx.reply("✅ Usuario desbloqueado.");
 });
 
 bot.on("message", async (ctx, next) => {
   const p = pending.get(ctx.from?.id);
 
   if (p && isAdmin(ctx.from.id) && ctx.chat.type === "private") {
-    if (p.type === "welcome_text" && ctx.message.text) {
-      db.setWelcome(ctx.message.text);
-      db.setWelcomeSource(null);
+    if (p.type === "welcome_text" && (ctx.message.text !== undefined || ctx.message.caption !== undefined)) {
+      const source = sourceFromMessage(ctx);
+      if (source.media) return ctx.reply("❌ Para texto usa solo un mensaje de texto. Para multimedia + texto usa 🖼️ Multimedia.");
+      db.setWelcome({ text: source.text, entities: source.entities });
+      db.setWelcomeSource({ ...source, media: false });
       pending.delete(ctx.from.id);
-      return ctx.reply("✅ Texto de bienvenida guardado.", welcomeMenu());
+      return ctx.reply("✅ Bienvenida de texto guardada.", welcomeMenu());
     }
 
     if (p.type === "welcome_media" && !ctx.message.text?.startsWith("/")) {
-      db.setWelcomeSource({ chatId: ctx.chat.id, messageId: ctx.message.message_id });
+      const source = sourceFromMessage(ctx);
+      if (!source.media) return ctx.reply("❌ Envía una multimedia con su texto/caption.");
+      db.setWelcomeSource(source);
+      db.setWelcome(null);
       pending.delete(ctx.from.id);
-      return ctx.reply("✅ Bienvenida multimedia guardada.", welcomeMenu());
+      return ctx.reply("✅ Bienvenida multimedia + texto guardada.", welcomeMenu());
     }
 
     if (p.type === "welcome_button" && ctx.message.text) {
-      const parts = ctx.message.text.split("|").map(x => x.trim());
-      if (parts.length < 2 || !parts[0] || !/^https?:\/\//i.test(parts[1])) {
-        return ctx.reply("❌ Formato incorrecto. Usa:\nTexto del botón | https://ejemplo.com");
-      }
+      const parts = ctx.message.text.split("|").map((x) => x.trim());
+      if (parts.length < 2 || !parts[0] || !/^https?:\/\//i.test(parts[1])) return ctx.reply("❌ Usa: #p Texto | https://ejemplo.com");
+      let label = parts[0], style;
+      const match = label.match(/^#([prg])\s+/i);
+      if (match) { style = ({p:"primary",r:"danger",g:"success"})[match[1].toLowerCase()]; label = label.replace(/^#[prg]\s+/i,"").trim(); }
       const buttons = db.getWelcomeButtons();
-      let label = parts[0];
-      let style;
-      const match = label.match(/^#([prg])\\s+/i);
-      if (match) {
-        style = ({ p: "primary", r: "danger", g: "success" })[match[1].toLowerCase()];
-        label = label.replace(/^#[prg]\\s+/i, "").trim();
-      }
       buttons.push({ text: label, url: parts[1], style });
       db.setWelcomeButtons(buttons);
       pending.delete(ctx.from.id);
@@ -266,82 +397,94 @@ bot.on("message", async (ctx, next) => {
     }
 
     if (p.type === "quick_command" && ctx.message.text) {
-      const command = ctx.message.text.trim().replace(/^\//, "").toLowerCase();
-      if (!/^[a-z0-9_]{2,32}$/.test(command)) return ctx.reply("❌ Nombre inválido. Usa letras, números y _ (2-32 caracteres).");
-      pending.set(ctx.from.id, { type: "quick_text", command });
-      return ctx.reply("✅ Comando /" + command + " creado.\n\nAhora envía el texto que debe responder.");
+      let command = ctx.message.text.trim().replace(/^\//, "").toLowerCase();
+      if (!/^[a-z0-9_]{2,32}$/.test(command)) return ctx.reply("❌ Nombre inválido. Usa 2-32 caracteres: letras, números y _.");
+      if (["start","help","info","status","cancel","admin","setwelcome","ban","unban"].includes(command)) return ctx.reply("❌ Ese comando está reservado.");
+      db.setQuickResponse(command, { textSource: null, mediaSource: null, buttons: [] });
+      pending.set(ctx.from.id, { type: "quick_config", command });
+      return ctx.reply("2️⃣ Respuesta " + command + " creada. Ahora elige qué configurar:", quickMenu(command));
     }
 
-    if (p.type === "quick_text" && ctx.message.text) {
-      db.setQuickResponse(p.command, { text: ctx.message.text, source: null });
-      pending.delete(ctx.from.id);
-      return ctx.reply("✅ Respuesta rápida /" + p.command + " guardada.", quickMenu());
+    if (p.type === "quick_text" && (ctx.message.text !== undefined || ctx.message.caption !== undefined)) {
+      const source = sourceFromMessage(ctx);
+      if (source.media) return ctx.reply("❌ Aquí usa solo texto. Para multimedia usa 🖼️ Multimedia + texto.");
+      db.setQuickResponse(p.command, { textSource: { text: source.text, entities: source.entities, chatId: source.chatId, messageId: source.messageId } });
+      pending.set(ctx.from.id, { type: "quick_config", command: p.command });
+      return ctx.reply("✅ Texto guardado.", quickMenu(p.command));
+    }
+
+    if (p.type === "quick_media" && !ctx.message.text?.startsWith("/")) {
+      const source = sourceFromMessage(ctx);
+      if (!source.media) return ctx.reply("❌ Envía una multimedia con caption/texto.");
+      db.setQuickResponse(p.command, { mediaSource: source });
+      pending.set(ctx.from.id, { type: "quick_config", command: p.command });
+      return ctx.reply("✅ Multimedia + texto guardados.", quickMenu(p.command));
+    }
+
+    if (p.type === "quick_button" && ctx.message.text) {
+      const parts = ctx.message.text.split("|").map((x) => x.trim());
+      if (parts.length < 2 || !parts[0] || !/^https?:\/\//i.test(parts[1])) return ctx.reply("❌ Usa: #p Texto | https://ejemplo.com");
+      let label = parts[0], style;
+      const match = label.match(/^#([prg])\s+/i);
+      if (match) { style = ({p:"primary",r:"danger",g:"success"})[match[1].toLowerCase()]; label = label.replace(/^#[prg]\s+/i,"").trim(); }
+      const buttons = db.getQuickResponse(p.command)?.buttons || [];
+      buttons.push({ text: label, url: parts[1], style });
+      db.setQuickResponse(p.command, { buttons });
+      pending.set(ctx.from.id, { type: "quick_config", command: p.command });
+      return ctx.reply("✅ Botón agregado.", quickButtonMenu());
     }
 
     if (p.type === "quick_delete" && ctx.message.text) {
       const command = ctx.message.text.trim().replace(/^\//, "").toLowerCase();
-      if (!db.getQuickResponse(command)) return ctx.reply("❌ Ese comando no existe.");
+      if (!db.getQuickResponse(command)) return ctx.reply("❌ Esa respuesta no existe.");
       db.deleteQuickResponse(command);
       pending.delete(ctx.from.id);
-      return ctx.reply("🗑️ /" + command + " eliminado.", quickMenu());
+      return ctx.reply("🗑️ Eliminada.", quickMenu());
     }
   }
 
   if (ctx.chat.type === "private") {
-    if (ctx.message.text?.startsWith("/")) {
-      const command = ctx.message.text.split(/\s+/)[0].slice(1).split("@")[0].toLowerCase();
+    const raw = ctx.message.text?.trim();
+    if (raw?.startsWith("/")) {
+      const command = raw.split(/\s+/)[0].slice(1).split("@")[0].toLowerCase();
       const quick = db.getQuickResponse(command);
       if (quick) {
-        if (quick.source) return ctx.telegram.copyMessage(ctx.chat.id, quick.source.chatId, quick.source.messageId);
-        return ctx.reply(vars(quick.text, ctx.from), { parse_mode: "HTML" });
+        const source = quick.mediaSource || quick.source;
+        if (source && await sendStoredSource(ctx, source, ctx.from, quick.buttons || [])) return;
+        const textSource = quick.textSource || (quick.text ? { text: quick.text, entities: [] } : null);
+        if (textSource) return ctx.reply(formatMessageHtml(textSource.text, textSource.entities || [], ctx.from), { parse_mode: "HTML", ...Markup.inlineKeyboard(quick.buttons || []) });
       }
       return;
+    }
+
+    const word = raw?.toLowerCase();
+    if (word) {
+      const quick = db.getQuickResponse(word);
+      if (quick) {
+        const source = quick.mediaSource || quick.source;
+        if (source && await sendStoredSource(ctx, source, ctx.from, quick.buttons || [])) return;
+        const textSource = quick.textSource || (quick.text ? { text: quick.text, entities: [] } : null);
+        if (textSource) return ctx.reply(formatMessageHtml(textSource.text, textSource.entities || [], ctx.from), { parse_mode: "HTML", ...Markup.inlineKeyboard(quick.buttons || []) });
+      }
     }
 
     const user = await ensure(ctx);
     if (!user) return;
     try {
       await ctx.telegram.copyMessage(STORE_CHAT_ID, ctx.chat.id, ctx.message.message_id, { message_thread_id: user.threadId });
-    } catch (error) {
-      console.error("copy user:", error);
-    }
+    } catch (error) { console.error("copy user:", error); }
     return;
   }
 
-  if (
-    Number(ctx.chat.id) !== STORE_CHAT_ID ||
-    !ctx.message.message_thread_id ||
-    !isAdmin(ctx.from.id)
-  ) return;
-
+  if (Number(ctx.chat.id) !== STORE_CHAT_ID || !ctx.message.message_thread_id || !isAdmin(ctx.from.id)) return;
   if (ctx.message.text?.startsWith("/")) return;
 
   const user = db.findByThread(ctx.message.message_thread_id);
   if (!user) return;
-
-  try {
-    await ctx.telegram.copyMessage(user.userId, ctx.chat.id, ctx.message.message_id);
-  } catch (error) {
-    console.error("copy admin:", error);
-  }
+  try { await ctx.telegram.copyMessage(user.userId, ctx.chat.id, ctx.message.message_id); }
+  catch (error) { console.error("copy admin:", error); }
 
   if (next) return next();
-});
-
-bot.command("ban", (ctx) => {
-  if (!isAdmin(ctx.from.id)) return ctx.reply("⛔ Solo administradores.");
-  const id = Number((ctx.message?.text || "").split(/\s+/)[1]);
-  if (!id) return ctx.reply("Uso: /ban ID");
-  db.ban(id);
-  return ctx.reply("🚫 Usuario bloqueado.");
-});
-
-bot.command("unban", (ctx) => {
-  if (!isAdmin(ctx.from.id)) return ctx.reply("⛔ Solo administradores.");
-  const id = Number((ctx.message?.text || "").split(/\s+/)[1]);
-  if (!id) return ctx.reply("Uso: /unban ID");
-  db.unban(id);
-  return ctx.reply("✅ Usuario desbloqueado.");
 });
 
 bot.catch((error) => console.error("Telegraf:", error));
