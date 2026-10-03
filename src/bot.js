@@ -27,6 +27,22 @@ function keyboardFromButtons(buttons = []) {
   return rows.length ? { inline_keyboard: rows } : undefined;
 }
 
+function topicModerationKeyboard() {
+  return Markup.inlineKeyboard([
+    [
+      Markup.button.callback("🔨 BANEAR", "TOPIC_BAN"),
+      Markup.button.callback("🔓 DESBANEAR", "TOPIC_UNBAN")
+    ],
+    [Markup.button.callback("ℹ️ INFORMACIÓN", "TOPIC_INFO")]
+  ]);
+}
+
+async function topicUser(ctx) {
+  const threadId = ctx.callbackQuery?.message?.message_thread_id ?? ctx.message?.message_thread_id;
+  if (Number(ctx.chat?.id) !== STORE_CHAT_ID || !threadId) return null;
+  return db.findByThread(threadId);
+}
+
 function welcomeKeyboard() {
   return Markup.inlineKeyboard(
     db.getWelcomeButtons().length
@@ -135,15 +151,16 @@ async function ensure(ctx) {
     const photos = await ctx.telegram.getUserProfilePhotos(ctx.from.id, { limit: 1 });
     const opts = { message_thread_id: user.threadId, parse_mode: "HTML" };
     if (photos.total_count && photos.photos[0]?.[0]) {
-      await ctx.telegram.sendPhoto(STORE_CHAT_ID, photos.photos[0][0].file_id, { ...opts, caption: info });
+      await ctx.telegram.sendPhoto(STORE_CHAT_ID, photos.photos[0][0].file_id, { ...opts, caption: info, reply_markup: topicModerationKeyboard().reply_markup });
     } else {
-      await ctx.telegram.sendMessage(STORE_CHAT_ID, info, opts);
+      await ctx.telegram.sendMessage(STORE_CHAT_ID, info, { ...opts, reply_markup: topicModerationKeyboard().reply_markup });
     }
   } catch (error) {
     console.error("registration notice:", error);
     await ctx.telegram.sendMessage(STORE_CHAT_ID, info, {
       message_thread_id: user.threadId,
-      parse_mode: "HTML"
+      parse_mode: "HTML",
+      reply_markup: topicModerationKeyboard().reply_markup
     }).catch(() => {});
   }
   return user;
@@ -164,6 +181,61 @@ async function sendWelcome(ctx) {
 
 bot.start(sendWelcome);
 bot.help((ctx) => ctx.reply("ℹ️ Envía cualquier mensaje para contactar al equipo."));
+bot.action("TOPIC_BAN", async (ctx) => {
+  await ctx.answerCbQuery();
+  const user = await topicUser(ctx);
+  if (!user) return ctx.reply("❌ No pude identificar al usuario de este tema.");
+  if (db.isBanned(user.userId)) return ctx.reply("🚫 Este usuario ya está baneado.");
+  return ctx.reply(
+    "⚠️ CONFIRMAR BANEO\n\n👤 " + fullName(user) + "\n🆔 " + user.userId +
+    "\n\n¿Quieres bloquear a este usuario?",
+    Markup.inlineKeyboard([[
+      Markup.button.callback("🔨 CONFIRMAR", "TOPIC_BAN_CONFIRM"),
+      Markup.button.callback("❌ CANCELAR", "TOPIC_BAN_CANCEL")
+    ]])
+  );
+});
+
+bot.action("TOPIC_BAN_CONFIRM", async (ctx) => {
+  await ctx.answerCbQuery();
+  const user = await topicUser(ctx);
+  if (!user) return ctx.reply("❌ No pude identificar al usuario de este tema.");
+  db.ban(user.userId);
+  return ctx.editMessageText(
+    "🔨 USUARIO BANEADO\n\n👤 " + fullName(user) + "\n🆔 " + user.userId +
+    "\n\nEl bot dejará de atender sus mensajes hasta que sea desbaneado.",
+    topicModerationKeyboard()
+  );
+});
+
+bot.action("TOPIC_BAN_CANCEL", async (ctx) => {
+  await ctx.answerCbQuery();
+  return ctx.editMessageText("❌ Baneo cancelado.", topicModerationKeyboard());
+});
+
+bot.action("TOPIC_UNBAN", async (ctx) => {
+  await ctx.answerCbQuery();
+  const user = await topicUser(ctx);
+  if (!user) return ctx.reply("❌ No pude identificar al usuario de este tema.");
+  if (!db.isBanned(user.userId)) return ctx.reply("ℹ️ Este usuario no está baneado.");
+  db.unban(user.userId);
+  return ctx.reply("🔓 Usuario desbaneado. Ya puede volver a utilizar el bot.", topicModerationKeyboard());
+});
+
+bot.action("TOPIC_INFO", async (ctx) => {
+  await ctx.answerCbQuery();
+  const user = await topicUser(ctx);
+  if (!user) return ctx.reply("❌ No pude identificar al usuario de este tema.");
+  return ctx.reply(
+    "ℹ️ INFORMACIÓN DEL USUARIO\n\n" +
+    "👤 " + fullName(user) + "\n" +
+    "🆔 " + user.userId + "\n" +
+    "🧵 Tema: " + user.threadId + "\n" +
+    "📅 Registro: " + (user.createdAt || "Sin dato") + "\n" +
+    "🚫 Estado: " + (db.isBanned(user.userId) ? "Baneado" : "Activo")
+  );
+});
+
 bot.action("INFO", async (ctx) => {
   await ctx.answerCbQuery();
   await ctx.reply("👤 " + fullName(ctx.from) + "\n🆔 " + ctx.from.id);
@@ -362,6 +434,10 @@ bot.command("unban", (ctx) => {
 });
 
 bot.on("message", async (ctx, next) => {
+  if (ctx.chat.type === "private" && ctx.from && db.isBanned(ctx.from.id)) {
+    return ctx.reply("🚫 Tu acceso a APORTES-BOT está bloqueado.");
+  }
+
   const p = pending.get(ctx.from?.id);
 
   if (p && isAdmin(ctx.from.id) && ctx.chat.type === "private") {
@@ -476,7 +552,7 @@ bot.on("message", async (ctx, next) => {
     return;
   }
 
-  if (Number(ctx.chat.id) !== STORE_CHAT_ID || !ctx.message.message_thread_id || !isAdmin(ctx.from.id)) return;
+  if (Number(ctx.chat.id) !== STORE_CHAT_ID || !ctx.message.message_thread_id) return;
   if (ctx.message.text?.startsWith("/")) return;
 
   const user = db.findByThread(ctx.message.message_thread_id);
