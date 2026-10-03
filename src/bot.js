@@ -257,7 +257,7 @@ bot.on("message", async (ctx, next) => {
     }
 
     if (p.type === "quick_command" && ctx.message.text) {
-      const command = ctx.message.text.trim().replace(/^\\//, "").toLowerCase();
+      const command = ctx.message.text.trim().replace(/^\//, "").toLowerCase();
       if (!/^[a-z0-9_]{2,32}$/.test(command)) return ctx.reply("❌ Nombre inválido. Usa letras, números y _ (2-32 caracteres).");
       pending.set(ctx.from.id, { type: "quick_text", command });
       return ctx.reply("✅ Comando /" + command + " creado.\n\nAhora envía el texto que debe responder.");
@@ -270,7 +270,7 @@ bot.on("message", async (ctx, next) => {
     }
 
     if (p.type === "quick_delete" && ctx.message.text) {
-      const command = ctx.message.text.trim().replace(/^\\//, "").toLowerCase();
+      const command = ctx.message.text.trim().replace(/^\//, "").toLowerCase();
       if (!db.getQuickResponse(command)) return ctx.reply("❌ Ese comando no existe.");
       db.deleteQuickResponse(command);
       pending.delete(ctx.from.id);
@@ -280,7 +280,7 @@ bot.on("message", async (ctx, next) => {
 
   if (ctx.chat.type === "private") {
     if (ctx.message.text?.startsWith("/")) {
-      const command = ctx.message.text.split(/\\s+/)[0].slice(1).split("@")[0].toLowerCase();
+      const command = ctx.message.text.split(/\s+/)[0].slice(1).split("@")[0].toLowerCase();
       const quick = db.getQuickResponse(command);
       if (quick) {
         if (quick.source) return ctx.telegram.copyMessage(ctx.chat.id, quick.source.chatId, quick.source.messageId);
@@ -321,7 +321,7 @@ bot.on("message", async (ctx, next) => {
 
 bot.command("ban", (ctx) => {
   if (!isAdmin(ctx.from.id)) return ctx.reply("⛔ Solo administradores.");
-  const id = Number((ctx.message?.text || "").split(/\\s+/)[1]);
+  const id = Number((ctx.message?.text || "").split(/\s+/)[1]);
   if (!id) return ctx.reply("Uso: /ban ID");
   db.ban(id);
   return ctx.reply("🚫 Usuario bloqueado.");
@@ -329,7 +329,7 @@ bot.command("ban", (ctx) => {
 
 bot.command("unban", (ctx) => {
   if (!isAdmin(ctx.from.id)) return ctx.reply("⛔ Solo administradores.");
-  const id = Number((ctx.message?.text || "").split(/\\s+/)[1]);
+  const id = Number((ctx.message?.text || "").split(/\s+/)[1]);
   if (!id) return ctx.reply("Uso: /unban ID");
   db.unban(id);
   return ctx.reply("✅ Usuario desbloqueado.");
