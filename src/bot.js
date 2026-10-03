@@ -246,7 +246,7 @@ bot.on("message", async (ctx, next) => {
 
     if (p.type === "welcome_button" && ctx.message.text) {
       const parts = ctx.message.text.split("|").map(x => x.trim());
-      if (parts.length < 2 || !parts[0] || !/^https?:\\/\\//i.test(parts[1])) {
+      if (parts.length < 2 || !parts[0] || !/^https?:\/\//i.test(parts[1])) {
         return ctx.reply("❌ Formato incorrecto. Usa:\nTexto del botón | https://ejemplo.com");
       }
       const buttons = db.getWelcomeButtons();
