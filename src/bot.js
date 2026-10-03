@@ -4,7 +4,7 @@ const { Telegraf, Markup } = require("telegraf");
 const { BOT_TOKEN, STORE_CHAT_ID, ADMIN_IDS, TIMEZONE } = require("./config");
 const db = require("./storage");
 const {
-  fullName, varsHtml, hasVars, formatMessageHtml, topicName, registration
+  fullName, varsHtml, hasVars, formatMessageHtml, topicName, registration, DEFAULT_REGISTRATION_TEMPLATE
 } = require("./utils");
 
 if (!BOT_TOKEN) throw new Error("Falta BOT_TOKEN");
@@ -80,13 +80,36 @@ function keyboardFromButtons(buttons = []) {
 }
 
 function topicModerationKeyboard() {
-  return Markup.inlineKeyboard([
-    [
-      Markup.button.callback("🔨 BANEAR", "TOPIC_BAN"),
-      Markup.button.callback("🔓 DESBANEAR", "TOPIC_UNBAN")
-    ],
-    [Markup.button.callback("ℹ️ INFORMACIÓN", "TOPIC_INFO")]
-  ]);
+  return {
+    reply_markup: {
+      inline_keyboard: [
+        [
+          styleButton("🚷 Banear", null, "TOPIC_BAN", "danger"),
+          styleButton("🚹 Desbanear", null, "TOPIC_UNBAN", "success")
+        ],
+        [styleButton("ℹ️ Información", null, "TOPIC_INFO", "primary")]
+      ]
+    }
+  };
+}
+
+function registrationButtons() {
+  const saved = db.getRegistrationButtons();
+  return saved || [
+    { text: "🚷 Banear", callback: "TOPIC_BAN", style: "danger" },
+    { text: "🚹 Desbanear", callback: "TOPIC_UNBAN", style: "success" },
+    { text: "ℹ️ Información", callback: "TOPIC_INFO", style: "primary" }
+  ];
+}
+
+function registrationKeyboard() {
+  const buttons = registrationButtons();
+  return {
+    inline_keyboard: [
+      buttons.filter(b => b.text !== "ℹ️ Información").map(b => styleButton(b.text, b.url, b.callback, b.style)),
+      buttons.filter(b => b.text === "ℹ️ Información").map(b => styleButton(b.text, b.url, b.callback, b.style))
+    ].filter(row => row.length)
+  };
 }
 
 async function topicUser(ctx) {
@@ -105,6 +128,7 @@ function welcomeKeyboard() {
 
 function adminMenu() {
   return Markup.inlineKeyboard([
+    [Markup.button.callback("👤 Plantilla de usuario", "REG_MENU")],
     [Markup.button.callback("👋 Bienvenida", "W_MENU")],
     [Markup.button.callback("📊 Estadísticas", "ADMIN_STATS")],
     [Markup.button.callback("🧹 Limpiar temas vacíos", "ADMIN_SCAN_EMPTY")],
@@ -218,8 +242,8 @@ async function fetchProfile(ctx) {
 
 async function refreshRegistrationCard(ctx, user, previousPhotoFileId = "") {
   if (!user?.threadId || !user.registrationMessageId) return;
-  const info = registration(user);
-  const reply_markup = topicModerationKeyboard().reply_markup;
+  const info = registration(user, db.getRegistrationTemplate());
+  const reply_markup = registrationKeyboard();
 
   try {
     if (user.profilePhotoFileId && user.profilePhotoFileId !== previousPhotoFileId) {
@@ -311,13 +335,13 @@ async function ensure(ctx) {
   };
 
   db.setUser(ctx.from.id, user);
-  const info = registration(user);
+  const info = registration(user, db.getRegistrationTemplate());
 
   try {
     const opts = {
       message_thread_id: user.threadId,
       parse_mode: "HTML",
-      reply_markup: topicModerationKeyboard().reply_markup
+      reply_markup: registrationKeyboard()
     };
 
     if (photos.total_count && photos.photos[0]?.[0]) {
@@ -510,6 +534,122 @@ bot.action("ADMIN_DELETE_EMPTY", async (ctx) => {
     adminMenu()
   );
 });
+function registrationMenu() {
+  return Markup.inlineKeyboard([
+    [Markup.button.callback("📝 Editar plantilla", "REG_EDIT")],
+    [Markup.button.callback("👁️ Vista previa", "REG_PREVIEW")],
+    [Markup.button.callback("🧩 Variables", "REG_VARS")],
+    [Markup.button.callback("🔘 Botones Style", "REG_BUTTONS")],
+    [Markup.button.callback("♻️ Restaurar predeterminada", "REG_RESET")],
+    [Markup.button.callback("🔙 Panel principal", "ADMIN_MENU")]
+  ]);
+}
+
+bot.action("REG_MENU", async (ctx) => {
+  await ctx.answerCbQuery();
+  if (!isAdmin(ctx.from.id)) return;
+  return ctx.editMessageText(
+    "👤 PLANTILLA DE USUARIO\n\n" +
+    "Esta plantilla controla la tarjeta que aparece en cada tema de usuario.\n\n" +
+    "🖼️ La foto de perfil NO forma parte del texto: el bot la muestra automáticamente si existe.\n" +
+    "🔘 Los botones tampoco forman parte del texto: se muestran como botones Style nativos de Telegram.",
+    registrationMenu()
+  );
+});
+
+bot.action("REG_EDIT", async (ctx) => {
+  await ctx.answerCbQuery();
+  if (!isAdmin(ctx.from.id)) return;
+  pending.set(ctx.from.id, { type: "registration_template" });
+  const current = db.getRegistrationTemplate();
+  const sample = current?.text || DEFAULT_REGISTRATION_TEMPLATE;
+  return ctx.reply(
+    "📝 ENVÍA LA NUEVA PLANTILLA\n\n" +
+    "Puedes escribirla y aplicarle formato directamente desde Telegram.\n\n" +
+    "Variables disponibles:\n" +
+    "{mencion} {nombre} {username} {userid}\n" +
+    "{premium} {idioma} {registro} {biografia} {estado}\n\n" +
+    "La foto de perfil y los botones se agregan automáticamente; no escribas «🖼️ Foto de perfil» en la plantilla.\n\n" +
+    "Plantilla actual:\n\n" + sample,
+    Markup.inlineKeyboard([[Markup.button.callback("❌ Cancelar", "REG_MENU")]])
+  );
+});
+
+bot.action("REG_VARS", async (ctx) => {
+  await ctx.answerCbQuery();
+  if (!isAdmin(ctx.from.id)) return;
+  return ctx.reply(
+    "🧩 VARIABLES DE LA PLANTILLA\n\n" +
+    "{mencion} → nombre con mención clicable\n" +
+    "{nombre} → nombre completo\n" +
+    "{username} → @username\n" +
+    "{userid} → ID de Telegram\n" +
+    "{premium} → Sí / No\n" +
+    "{idioma} → idioma del usuario\n" +
+    "{registro} → fecha y hora de registro\n" +
+    "{biografia} → biografía, si existe\n" +
+    "{estado} → Activo / No disponible / Baneado"
+  );
+});
+
+bot.action("REG_PREVIEW", async (ctx) => {
+  await ctx.answerCbQuery();
+  if (!isAdmin(ctx.from.id)) return;
+  const previewUser = await fetchProfile(ctx);
+  previewUser.createdAt = new Date().toISOString();
+  previewUser.banned = false;
+  const source = db.getRegistrationTemplate() || { text: DEFAULT_REGISTRATION_TEMPLATE, entities: [] };
+  const html = registration(previewUser, source);
+  const buttons = registrationKeyboard();
+  let sent;
+  try {
+    const photos = await ctx.telegram.getUserProfilePhotos(ctx.from.id, { limit: 1 });
+    if (photos.total_count && photos.photos[0]?.[0]) {
+      sent = await ctx.telegram.sendPhoto(ctx.chat.id, photos.photos[0][0].file_id, {
+        caption: html,
+        parse_mode: "HTML",
+        reply_markup: buttons.inline_keyboard
+      });
+    } else {
+      sent = await ctx.reply(html, { parse_mode: "HTML", reply_markup: buttons.inline_keyboard });
+    }
+  } catch (error) {
+    console.error("registration preview:", error);
+    sent = await ctx.reply(html, { parse_mode: "HTML", reply_markup: buttons.inline_keyboard });
+  }
+  return ctx.reply("👆 Vista previa de la tarjeta.", registrationMenu());
+});
+
+bot.action("REG_BUTTONS", async (ctx) => {
+  await ctx.answerCbQuery();
+  if (!isAdmin(ctx.from.id)) return;
+  return ctx.reply(
+    "🔘 BOTONES STYLE\n\n" +
+    "La distribución queda:\n" +
+    "🚷 Banear = danger (rojo) | 🚹 Desbanear = success (verde)\n" +
+    "ℹ️ Información = primary (azul)\n\n" +
+    "Son botones nativos Style de Telegram.",
+    Markup.inlineKeyboard([
+      [Markup.button.callback("♻️ Restaurar botones", "REG_BTN_RESET")],
+      [Markup.button.callback("🔙 Volver", "REG_MENU")]
+    ])
+  );
+});
+
+bot.action("REG_BTN_RESET", async (ctx) => {
+  await ctx.answerCbQuery();
+  if (!isAdmin(ctx.from.id)) return;
+  db.setRegistrationButtons(null);
+  return ctx.editMessageText("✅ Botones restaurados a Style nativo de Telegram.", registrationMenu());
+});
+
+bot.action("REG_RESET", async (ctx) => {
+  await ctx.answerCbQuery();
+  if (!isAdmin(ctx.from.id)) return;
+  db.setRegistrationTemplate(null);
+  return ctx.editMessageText("♻️ Plantilla predeterminada restaurada.", registrationMenu());
+});
+
 bot.command("setwelcome", (ctx) => {
   if (!isAdmin(ctx.from.id)) return ctx.reply("⛔ Solo administradores.");
   return ctx.reply("👋 CONFIGURAR BIENVENIDA\n\nElige qué quieres configurar:", welcomeMenu());
@@ -700,6 +840,17 @@ bot.on("message", async (ctx, next) => {
   const p = pending.get(ctx.from?.id);
 
   if (p && isAdmin(ctx.from.id) && ctx.chat.type === "private") {
+    if (p.type === "registration_template" && (ctx.message.text !== undefined || ctx.message.caption !== undefined)) {
+      const source = sourceFromMessage(ctx);
+      if (source.media) return ctx.reply("❌ La plantilla es de texto. La foto de perfil se agrega automáticamente al enviar la tarjeta.");
+      db.setRegistrationTemplate({
+        text: source.text,
+        entities: source.entities
+      });
+      pending.delete(ctx.from.id);
+      return ctx.reply("✅ Plantilla de usuario guardada. Se aplicará automáticamente a las nuevas tarjetas y se actualizará en las existentes.", registrationMenu());
+    }
+
     if (p.type === "welcome_text" && (ctx.message.text !== undefined || ctx.message.caption !== undefined)) {
       const source = sourceFromMessage(ctx);
       if (source.media) return ctx.reply("❌ Para texto usa solo un mensaje de texto. Para multimedia + texto usa 🖼️ Multimedia.");
