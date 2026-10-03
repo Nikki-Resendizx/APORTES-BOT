@@ -13,11 +13,13 @@ const isAdmin = (id) => ADMIN_IDS.includes(Number(id));
 const pending = new Map();
 
 function welcomeKeyboard() {
-  const rows = db.getWelcomeButtons().map((b) => [
-    b.url ? Markup.button.url(b.text, b.url) : Markup.button.callback(b.text, b.callback || "INFO")
-  ]);
+  const rows = db.getWelcomeButtons().map((b) => [{
+    text: b.text,
+    style: b.style || undefined,
+    ...(b.url ? { url: b.url } : { callback_data: b.callback || "INFO" })
+  }]);
   return rows.length ? Markup.inlineKeyboard(rows) : Markup.inlineKeyboard([
-    [Markup.button.callback("ℹ️ Información", "INFO")]
+    [{ text: "ℹ️ Información", callback_data: "INFO", style: "primary" }]
   ]);
 }
 
@@ -132,7 +134,7 @@ bot.action("W_BUTTONS", async (ctx) => {
   const buttons = db.getWelcomeButtons();
   const lines = buttons.length ? buttons.map((b, i) => (i + 1) + ". " + b.text + (b.url ? " → " + b.url : "")).join("\n") : "No hay botones configurados.";
   return ctx.reply(
-    "🔘 BOTONES DE BIENVENIDA\n\n" + lines + "\n\nPara agregar uno usa:\nTexto | https://ejemplo.com",
+    "🔘 BOTONES DE BIENVENIDA\n\n" + lines + "\n\nPara agregar uno usa:\n#p Texto | https://ejemplo.com\n#r Texto | https://ejemplo.com\n#g Texto | https://ejemplo.com\n\n#p = azul • #r = rojo • #g = verde",
     Markup.inlineKeyboard([
       [Markup.button.callback("➕ Agregar botón", "W_BTN_ADD")],
       [Markup.button.callback("🗑️ Borrar todos", "W_BTN_CLEAR")],
@@ -144,7 +146,7 @@ bot.action("W_BUTTONS", async (ctx) => {
 bot.action("W_BTN_ADD", async (ctx) => {
   await ctx.answerCbQuery();
   pending.set(ctx.from.id, { type: "welcome_button" });
-  return ctx.reply("🔘 Envía el botón con este formato:\n\nTexto del botón | https://ejemplo.com");
+  return ctx.reply("🔘 Envía el botón con este formato:\n\n#p Texto del botón | https://ejemplo.com\n\nEstilos:\n#p = azul (primary)\n#r = rojo (danger)\n#g = verde (success)\n\nSi no pones estilo, se usará el estilo predeterminado de Telegram.");
 });
 
 bot.action("W_BTN_CLEAR", async (ctx) => {
@@ -250,7 +252,14 @@ bot.on("message", async (ctx, next) => {
         return ctx.reply("❌ Formato incorrecto. Usa:\nTexto del botón | https://ejemplo.com");
       }
       const buttons = db.getWelcomeButtons();
-      buttons.push({ text: parts[0], url: parts[1] });
+      let label = parts[0];
+      let style;
+      const match = label.match(/^#([prg])\\s+/i);
+      if (match) {
+        style = ({ p: "primary", r: "danger", g: "success" })[match[1].toLowerCase()];
+        label = label.replace(/^#[prg]\\s+/i, "").trim();
+      }
+      buttons.push({ text: label, url: parts[1], style });
       db.setWelcomeButtons(buttons);
       pending.delete(ctx.from.id);
       return ctx.reply("✅ Botón agregado.", welcomeMenu());
