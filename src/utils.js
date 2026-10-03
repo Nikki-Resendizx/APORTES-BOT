@@ -41,7 +41,7 @@ function entitiesToHtml(text,entities=[]){
     events.push({at:e.offset,type:"open",e});
     events.push({at:e.offset+e.length,type:"close",e});
   }
-  events.sort((a,b)=>a.at-b.at || (a.type==="close"?-1:1) || (a.type==="open" ? a.e.length-b.e.length : b.e.length-a.e.length));
+  events.sort((a,b)=>a.at-b.at || (a.type===b.type ? (a.type==="open" ? b.e.length-a.e.length : a.e.length-b.e.length) : (a.type==="close" ? -1 : 1)));
   let out="", pos=0;
   const stack=[];
   for(const ev of events){
@@ -58,8 +58,23 @@ function entitiesToHtml(text,entities=[]){
   for(const e of list){
     const open="\u0001"+list.indexOf(e)+"\u0002";
     const close="\u0003"+list.indexOf(e)+"\u0004";
-    out=out.split(open).join("<"+(e.type==="blockquote"?"blockquote":e.type==="expandable_blockquote"?"blockquote expandable":e.type==="pre"?"pre":e.type==="bold"?"b":e.type==="italic"?"i":e.type==="underline"?"u":e.type==="strikethrough"?"s":e.type==="spoiler"?"tg-spoiler":e.type==="code"?"code":e.type==="text_link"?"a":e.type==="text_mention"?"a":e.type==="custom_emoji"?"tg-emoji":(e.type==="url"||e.type==="email"||e.type==="phone_number")?"a":"span")+">");
-    out=out.split(close).join("</"+(e.type==="expandable_blockquote"||e.type==="blockquote"?"blockquote":e.type==="pre"?"pre":e.type==="bold"?"b":e.type==="italic"?"i":e.type==="underline"?"u":e.type==="strikethrough"?"s":e.type==="spoiler"?"tg-spoiler":e.type==="code"?"code":e.type==="text_link"||e.type==="text_mention"||e.type==="url"||e.type==="email"||e.type==="phone_number"?"a":e.type==="custom_emoji"?"tg-emoji":"span")+">");
+    let openTag, closeTag;
+    if(e.type==="bold"){openTag="<b>";closeTag="</b>";}
+    else if(e.type==="italic"){openTag="<i>";closeTag="</i>";}
+    else if(e.type==="underline"){openTag="<u>";closeTag="</u>";}
+    else if(e.type==="strikethrough"){openTag="<s>";closeTag="</s>";}
+    else if(e.type==="spoiler"){openTag="<tg-spoiler>";closeTag="</tg-spoiler>";}
+    else if(e.type==="code"){openTag="<code>";closeTag="</code>";}
+    else if(e.type==="pre"){openTag=e.language ? '<pre><code class="language-'+escapeHtml(e.language)+'">' : "<pre>";closeTag=e.language ? "</code></pre>" : "</pre>";}
+    else if(e.type==="text_link"){openTag='<a href="'+escapeHtml(e.url)+'">';closeTag="</a>";}
+    else if(e.type==="text_mention"){openTag='<a href="tg://user?id='+String(e.user?.id||"")+'">';closeTag="</a>";}
+    else if(e.type==="custom_emoji"){openTag='<tg-emoji emoji-id="'+String(e.custom_emoji_id||"")+'">';closeTag="</tg-emoji>";}
+    else if(e.type==="blockquote"){openTag="<blockquote>";closeTag="</blockquote>";}
+    else if(e.type==="expandable_blockquote"){openTag="<blockquote expandable>";closeTag="</blockquote>";}
+    else if(e.type==="url" || e.type==="email" || e.type==="phone_number"){openTag='<a href="'+escapeHtml(text.slice(e.offset,e.offset+e.length))+'">';closeTag="</a>";}
+    else {openTag="";closeTag="";}
+    out=out.split(open).join(openTag);
+    out=out.split(close).join(closeTag);
   }
   return out;
 }
