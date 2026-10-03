@@ -3,7 +3,7 @@ const path = require("path");
 const dir = path.join(process.cwd(), "data");
 const file = path.join(dir, "state.json");
 let state;
-try { state = JSON.parse(fs.readFileSync(file, "utf8")); } catch { state = { users: {}, welcome: null, bans: [] }; }
+try { state = JSON.parse(fs.readFileSync(file, "utf8")); } catch { state = { users: {}, welcome: null, welcomeSource: null, bans: [] }; }
 function save(){ fs.mkdirSync(dir,{recursive:true}); fs.writeFileSync(file,JSON.stringify(state,null,2)); }
 function getUser(id){ return state.users[String(id)] || null; }
 function setUser(id,v){ state.users[String(id)]=v; save(); }
