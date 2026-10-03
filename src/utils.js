@@ -1,5 +1,5 @@
 function fullName(u){ return [u.first_name,u.last_name].filter(Boolean).join(" ") || "Sin nombre"; }
-function stamp(){ return new Intl.DateTimeFormat("es-MX",{timeZone:"America/Mexico_City",dateStyle:"short",timeStyle:"medium",hour12:false}).format(new Date()); }
+function stamp(date = new Date()){ return new Intl.DateTimeFormat("es-MX",{timeZone:"America/Mexico_City",dateStyle:"short",timeStyle:"medium",hour12:false}).format(new Date(date)); }
 function escapeHtml(value){
   return String(value ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 }
@@ -83,6 +83,22 @@ function formatMessageHtml(text,entities,u){
 }
 function topicName(u){ return (fullName(u)+" • "+u.id).slice(0,128); }
 function registration(u){
-  return ["👤 NUEVO USUARIO","",`👤 Nombre: ${mention(u)}`,`🆔 ID: ${u.id}`,`🔗 Username: ${u.username ? escapeHtml("@"+u.username) : "Sin username"}`,`⭐ Premium: ${u.is_premium ? "Sí":"No"}`,`📅 Registro: ${stamp()}`,`🌎 Zona horaria: America/Mexico_City`].join("\n");
+  const lines = [
+    "👤 NUEVO USUARIO",
+    "",
+    `📝 Nombre: ${mention(u)}`,
+    `🔗 Username: ${u.username ? escapeHtml("@"+u.username) : "Sin username"}`,
+    `🆔 ID: ${u.id}`,
+    `⭐ Premium: ${u.is_premium ? "Sí" : "No"}`,
+    `🌐 Idioma: ${escapeHtml(u.language_code || u.languageCode || "No disponible")}`,
+    `📅 Registro: ${escapeHtml(stamp(u.createdAt || new Date()))}`
+  ];
+
+  if (u.bio) {
+    lines.push("", "📖 Biografía:", escapeHtml(u.bio));
+  }
+
+  lines.push("", `🟢 Estado: ${u.blocked ? "No disponible" : "Activo"}`);
+  return lines.join("\n");
 }
 module.exports={fullName,stamp,escapeHtml,mention,varsHtml,hasVars,entitiesToHtml,formatMessageHtml,topicName,registration};
