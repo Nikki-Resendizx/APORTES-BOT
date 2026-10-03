@@ -13,6 +13,58 @@ if (!STORE_CHAT_ID) throw new Error("Falta STORE_CHAT_ID");
 const bot = new Telegraf(BOT_TOKEN);
 const isAdmin = (id) => ADMIN_IDS.includes(Number(id));
 const pending = new Map();
+const albumQueues = new Map();
+
+function queueForward(key, item, flush) {
+  let queue = albumQueues.get(key);
+  if (!queue) {
+    queue = { items: [], timer: null };
+    albumQueues.set(key, queue);
+  }
+  queue.items.push(item);
+  clearTimeout(queue.timer);
+  queue.timer = setTimeout(async () => {
+    albumQueues.delete(key);
+    try { await flush(queue.items); }
+    catch (error) { console.error("forward album:", error); }
+  }, 180);
+}
+
+async function forwardUserMessage(ctx, user) {
+  const message = ctx.message;
+  if (!message?.message_id) return;
+  if (message.media_group_id) {
+    return queueForward(
+      "user:" + user.userId + ":" + message.media_group_id,
+      { messageId: message.message_id },
+      async (items) => ctx.telegram.forwardMessages(
+        STORE_CHAT_ID, ctx.chat.id,
+        items.map((item) => item.messageId),
+        { message_thread_id: user.threadId }
+      )
+    );
+  }
+  return ctx.telegram.forwardMessage(
+    STORE_CHAT_ID, ctx.chat.id, message.message_id,
+    { message_thread_id: user.threadId }
+  );
+}
+
+async function forwardTopicMessage(ctx, user) {
+  const message = ctx.message;
+  if (!message?.message_id) return;
+  if (message.media_group_id) {
+    return queueForward(
+      "topic:" + user.userId + ":" + message.media_group_id,
+      { messageId: message.message_id },
+      async (items) => ctx.telegram.forwardMessages(
+        user.userId, ctx.chat.id,
+        items.map((item) => item.messageId)
+      )
+    );
+  }
+  return ctx.telegram.forwardMessage(user.userId, ctx.chat.id, message.message_id);
+}
 
 function styleButton(text, url, callback_data, style) {
   return {
@@ -754,7 +806,7 @@ bot.on("message", async (ctx, next) => {
     const user = await ensure(ctx);
     if (!user) return;
     try {
-      await ctx.telegram.copyMessage(STORE_CHAT_ID, ctx.chat.id, ctx.message.message_id, { message_thread_id: user.threadId });
+      await forwardUserMessage(ctx, user);
     } catch (error) { console.error("copy user:", error); }
     return;
   }
@@ -765,7 +817,7 @@ bot.on("message", async (ctx, next) => {
   const user = db.markActivityByThread(ctx.message.message_thread_id);
   if (!user) return;
   try {
-    await ctx.telegram.copyMessage(user.userId, ctx.chat.id, ctx.message.message_id);
+    await forwardTopicMessage(ctx, user);
   } catch (error) {
     console.error("copy admin:", error);
     const description = String(error?.description || error?.message || "").toLowerCase();
