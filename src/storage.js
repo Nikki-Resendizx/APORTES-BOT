@@ -16,6 +16,7 @@ state.topicStats ||= {};
 state.clones ||= {};
 state.premium ||= {};
 state.promoCodes ||= {};
+state.registries ||= { chatId: null, topics: { users: null, clones: null, premium: null } };
 
 function getClones(){ return state.clones || {}; }
 function getClone(id){ return state.clones[String(id)] || null; }
@@ -75,5 +76,7 @@ function markActivityByThread(thread){ const user=findByThread(thread); if(!user
 function getStats(){ const users=Object.values(state.users); return {total:users.length,blocked:users.filter(u=>u.blocked).length,banned:state.bans.length,activeTopics:users.filter(u=>u.threadId).length}; }
 function getUsers(){ return Object.values(state.users); }
 function deleteUser(id){ delete state.users[String(id)]; save(); }
+function getRegistries(){ return state.registries || { chatId:null, topics:{users:null,clones:null,premium:null} }; }
+function setRegistries(value){ state.registries = { chatId:value?.chatId || null, topics:{ users:value?.topics?.users || null, clones:value?.topics?.clones || null, premium:value?.topics?.premium || null } }; save(); }
 function resetUsers(){ state.users={}; state.topicStats={}; save(); }
-module.exports={getClones,getClone,setClone,deleteClone,getUserClones,getPremium,grantPremium,revokePremium,setPromoCode,redeemPromoCode,getPremiumUsers,getUser,setUser,findByThread,getWelcome,setWelcome,getWelcomeSource,setWelcomeSource,clearWelcome,getWelcomeButtons,setWelcomeButtons,getRegistrationTemplate,setRegistrationTemplate,getRegistrationButtons,setRegistrationButtons,getQuickResponses,getQuickResponse,setQuickResponse,deleteQuickResponse,isBanned,ban,unban,markBlocked,markActivityByThread,getStats,getUsers,deleteUser,resetUsers};
+module.exports={getClones,getClone,setClone,deleteClone,getUserClones,getPremium,grantPremium,revokePremium,setPromoCode,redeemPromoCode,getPremiumUsers,getRegistries,setRegistries,getUser,setUser,findByThread,getWelcome,setWelcome,getWelcomeSource,setWelcomeSource,clearWelcome,getWelcomeButtons,setWelcomeButtons,getRegistrationTemplate,setRegistrationTemplate,getRegistrationButtons,setRegistrationButtons,getQuickResponses,getQuickResponse,setQuickResponse,deleteQuickResponse,isBanned,ban,unban,markBlocked,markActivityByThread,getStats,getUsers,deleteUser,resetUsers};
