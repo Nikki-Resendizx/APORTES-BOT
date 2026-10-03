@@ -1,61 +1,18 @@
 # APORTES-BOT
 
-Bot de Telegram para recibir aportes y entregarlos a uno o varios administradores.
-
-## Render
-
-**Build Command**
-```
-npm install
-```
-
-**Start Command**
-```
-npm start
-```
+Bot de contacto Telegram.
 
 ## Variables de entorno
+- BOT_TOKEN: token de BotFather.
+- STORE_CHAT_ID: ID del grupo de foro donde se crean los temas.
+- ADMIN_IDS: IDs de administradores separados por coma.
+- TIMEZONE: opcional; por defecto America/Mexico_City.
 
-Configura en Render:
+## Puesta en marcha
+1. Crear un grupo de Telegram con Topics/Temas.
+2. Añadir el bot como administrador con permisos para gestionar temas y enviar mensajes.
+3. Obtener el ID del grupo y configurarlo como STORE_CHAT_ID.
+4. Configurar BOT_TOKEN y ADMIN_IDS en el hosting.
+5. Ejecutar npm start.
 
-```
-BOT_TOKEN=TOKEN_DEL_BOT
-ADMIN_IDS=123456789,987654321
-ADMIN_CHAT_ID=
-```
-
-- `BOT_TOKEN`: token entregado por BotFather.
-- `ADMIN_IDS`: IDs de administradores separados por comas.
-- `ADMIN_CHAT_ID`: opcional; chat, grupo o canal adicional de recepción.
-
-## Funciones
-
-- /start
-- /help
-- /cancel
-- Menú principal con botones inline
-- Envío de texto
-- Envío de fotos
-- Envío de videos
-- Envío de documentos
-- Envío de audio
-- Envío de notas de voz
-- Identificación básica del usuario
-- Varios administradores
-- Cancelación de operaciones
-- Manejo de errores
-- Telegram file_id para multimedia
-- Sin Firebase
-- Sin base de datos innecesaria
-- Estado temporal en memoria
-
-## Estructura
-
-```
-APORTES-BOT/
-├── src/
-│   └── bot.js
-├── package.json
-├── README.md
-└── .gitignore
-```
+No se guarda el contenido de las conversaciones en una base de datos externa. El estado mínimo usuario -> tema se mantiene en data/state.json.
