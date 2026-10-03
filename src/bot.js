@@ -521,6 +521,10 @@ bot.command("resetusers", async (ctx) => {
 });
 bot.command("cancel", (ctx) => { pending.delete(ctx.from.id); return ctx.reply("❌ Operación cancelada."); });
 
+bot.command("premium", async ctx=>{
+  const p=db.getPremium(ctx.from.id);
+  return ctx.reply("💎 PREMIUM\\n\\nPlan: "+(p.active?"💎 PREMIUM":"🆓 FREE")+"\\n"+(p.expiresAt?"⏳ Hasta: "+p.expiresAt:"\\nDesbloquea bots adicionales y funciones avanzadas."),premiumMenu());
+});
 bot.command("crearbot", async (ctx) => {
   const list=db.getUserClones(ctx.from.id);
   if(list.length>=1 && !clones.premium(ctx.from.id)) return ctx.reply("💎 Esta función requiere PREMIUM para crear más de un bot.\n\nTu plan FREE incluye 1 bot.", Markup.inlineKeyboard([[Markup.button.callback("💎 Ver Premium","PREMIUM_PLANS")]]));
@@ -917,6 +921,18 @@ bot.command("ban", (ctx) => {
   const id = Number((ctx.message?.text || "").split(/\s+/)[1]);
   if (!id) return ctx.reply("Uso: /ban ID");
   db.ban(id); return ctx.reply("🚫 Usuario bloqueado.");
+});
+bot.command("premiumgrant", (ctx) => {
+  if(!isAdmin(ctx.from.id)) return ctx.reply("⛔ Solo administradores.");
+  const parts=(ctx.message?.text||"").split(/\\s+/); const id=Number(parts[1]); const days=Number(parts[2]||30);
+  if(!id || !Number.isFinite(days) || days<1) return ctx.reply("Uso: /premiumgrant ID DIAS");
+  const p=db.grantPremium(id,days,"admin"); return ctx.reply("💎 Premium otorgado a "+id+" hasta "+p.expiresAt);
+});
+bot.command("promocode", (ctx) => {
+  if(!isAdmin(ctx.from.id)) return ctx.reply("⛔ Solo administradores.");
+  const parts=(ctx.message?.text||"").split(/\\s+/); const code=parts[1]; const days=Number(parts[2]||30); const uses=Number(parts[3]||1);
+  if(!code) return ctx.reply("Uso: /promocode CODIGO DIAS USOS");
+  db.setPromoCode(code,days,uses); return ctx.reply("🎁 Código creado: "+code+"\\n⏳ "+days+" días\\n👥 Usos: "+uses);
 });
 bot.command("unban", (ctx) => {
   if (!isAdmin(ctx.from.id)) return ctx.reply("⛔ Solo administradores.");
