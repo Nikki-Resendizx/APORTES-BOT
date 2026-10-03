@@ -13,6 +13,41 @@ state.registrationTemplate ||= null;
 state.registrationButtons ||= null;
 state.bans ||= [];
 state.topicStats ||= {};
+state.clones ||= {};
+state.premium ||= {};
+state.promoCodes ||= {};
+
+function getClones(){ return state.clones || {}; }
+function getClone(id){ return state.clones[String(id)] || null; }
+function setClone(id,value){ state.clones[String(id)] = value; save(); }
+function deleteClone(id){ delete state.clones[String(id)]; save(); }
+function getUserClones(ownerId){ return Object.values(state.clones).filter(c=>Number(c.ownerId)===Number(ownerId)); }
+
+function getPremium(userId){
+  const p = state.premium[String(userId)];
+  if(!p) return {active:false,expiresAt:null,plan:"free"};
+  const active = p.expiresAt && new Date(p.expiresAt).getTime() > Date.now();
+  return { ...p, active, plan: active ? "premium" : "free" };
+}
+function grantPremium(userId, days=30, source="admin"){
+  const id=String(userId), current=getPremium(userId);
+  const base=current.active ? new Date(current.expiresAt).getTime() : Date.now();
+  const expiresAt=new Date(base + Number(days)*86400000).toISOString();
+  state.premium[id]={userId:Number(userId),expiresAt,source,updatedAt:new Date().toISOString()};
+  save(); return getPremium(userId);
+}
+function revokePremium(userId){ delete state.premium[String(userId)]; save(); }
+function setPromoCode(code, days=30, uses=1){
+  state.promoCodes[String(code).trim().toUpperCase()]={days:Number(days),uses:Number(uses),createdAt:new Date().toISOString()}; save();
+}
+function redeemPromoCode(code,userId){
+  const key=String(code).trim().toUpperCase(), promo=state.promoCodes[key];
+  if(!promo || promo.uses<=0) return null;
+  promo.uses--; const result=grantPremium(userId,promo.days,"promo:"+key);
+  if(promo.uses<=0) delete state.promoCodes[key]; save(); return result;
+}
+function getPremiumUsers(){ return Object.values(state.premium||{}); }
+
 function save(){ fs.mkdirSync(dir,{recursive:true}); fs.writeFileSync(file,JSON.stringify(state,null,2)); }
 function getUser(id){ return state.users[String(id)] || null; }
 function setUser(id,value){ state.users[String(id)] = value; save(); }
@@ -41,4 +76,4 @@ function getStats(){ const users=Object.values(state.users); return {total:users
 function getUsers(){ return Object.values(state.users); }
 function deleteUser(id){ delete state.users[String(id)]; save(); }
 function resetUsers(){ state.users={}; state.topicStats={}; save(); }
-module.exports={getUser,setUser,findByThread,getWelcome,setWelcome,getWelcomeSource,setWelcomeSource,clearWelcome,getWelcomeButtons,setWelcomeButtons,getRegistrationTemplate,setRegistrationTemplate,getRegistrationButtons,setRegistrationButtons,getQuickResponses,getQuickResponse,setQuickResponse,deleteQuickResponse,isBanned,ban,unban,markBlocked,markActivityByThread,getStats,getUsers,deleteUser,resetUsers};
+module.exports={getClones,getClone,setClone,deleteClone,getUserClones,getPremium,grantPremium,revokePremium,setPromoCode,redeemPromoCode,getPremiumUsers,getUser,setUser,findByThread,getWelcome,setWelcome,getWelcomeSource,setWelcomeSource,clearWelcome,getWelcomeButtons,setWelcomeButtons,getRegistrationTemplate,setRegistrationTemplate,getRegistrationButtons,setRegistrationButtons,getQuickResponses,getQuickResponse,setQuickResponse,deleteQuickResponse,isBanned,ban,unban,markBlocked,markActivityByThread,getStats,getUsers,deleteUser,resetUsers};
