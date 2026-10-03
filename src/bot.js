@@ -51,13 +51,23 @@ function welcomeKeyboard() {
   );
 }
 
+function adminMenu() {
+  return Markup.inlineKeyboard([
+    [Markup.button.callback("👋 Bienvenida", "W_MENU")],
+    [Markup.button.callback("📊 Estadísticas", "ADMIN_STATS")],
+    [Markup.button.callback("🧹 Limpiar temas vacíos", "ADMIN_SCAN_EMPTY")],
+    [Markup.button.callback("⚡ Respuestas rápidas", "QR_MENU")]
+  ]);
+}
+
 function welcomeMenu() {
   return Markup.inlineKeyboard([
     [Markup.button.callback("📝 Texto", "W_TXT"), Markup.button.callback("🖼️ Multimedia", "W_MEDIA")],
     [Markup.button.callback("🔘 Botones", "W_BUTTONS"), Markup.button.callback("👁️ Vista previa", "W_PREVIEW")],
     [Markup.button.callback("🧩 Variables", "W_VARS")],
     [Markup.button.callback("🗑️ Eliminar bienvenida", "W_DELETE")],
-    [Markup.button.callback("⚡ Respuestas rápidas", "QR_MENU")]
+    [Markup.button.callback("⚡ Respuestas rápidas", "QR_MENU")],
+    [Markup.button.callback("🔙 Panel principal", "ADMIN_MENU")]
   ]);
 }
 
@@ -138,7 +148,10 @@ async function sendStoredSource(ctx, source, user, buttons) {
 }
 
 async function ensure(ctx) {
-  if (!ctx.from || ctx.chat.type !== "private" || db.isBanned(ctx.from.id)) return null;
+  if (!ctx.from || ctx.chat.type !== "private") return null;
+  if (db.isBanned(ctx.from.id)) return null;
+  const previous = db.getUser(ctx.from.id);
+  if (previous?.blocked) db.markBlocked(ctx.from.id, false);
   let user = db.getUser(ctx.from.id);
   if (user?.threadId) return user;
 
@@ -249,7 +262,77 @@ bot.command("cancel", (ctx) => { pending.delete(ctx.from.id); return ctx.reply("
 
 bot.command("admin", (ctx) => {
   if (!isAdmin(ctx.from.id)) return ctx.reply("⛔ Solo administradores.");
-  return ctx.reply("⚙️ PANEL DE ADMINISTRACIÓN", welcomeMenu());
+  return ctx.reply("⚙️ PANEL DE ADMINISTRACIÓN", adminMenu());
+});
+
+bot.action("ADMIN_MENU", async (ctx) => {
+  await ctx.answerCbQuery();
+  if (!isAdmin(ctx.from.id)) return ctx.editMessageText("⛔ Solo administradores.");
+  return ctx.editMessageText("⚙️ PANEL DE ADMINISTRACIÓN", adminMenu());
+});
+
+bot.action("ADMIN_STATS", async (ctx) => {
+  await ctx.answerCbQuery();
+  if (!isAdmin(ctx.from.id)) return;
+  const stats = db.getStats();
+  return ctx.reply(
+    "📊 ESTADÍSTICAS DE USUARIOS\n\n" +
+    "👥 Total registrados: " + stats.total + "\n" +
+    "🚫 Usuarios que bloquearon al bot: " + stats.blocked + "\n" +
+    "🔨 Usuarios baneados: " + stats.banned + "\n" +
+    "🧵 Temas registrados: " + stats.activeTopics,
+    Markup.inlineKeyboard([
+      [Markup.button.callback("🔄 Actualizar", "ADMIN_STATS")],
+      [Markup.button.callback("🔙 Panel principal", "ADMIN_MENU")]
+    ])
+  );
+});
+
+bot.action("ADMIN_SCAN_EMPTY", async (ctx) => {
+  await ctx.answerCbQuery();
+  if (!isAdmin(ctx.from.id)) return;
+  const empty = db.getUsers().filter(u => u.threadId && !u.hasConversation);
+  if (!empty.length) {
+    return ctx.reply(
+      "🧹 ESCANEO DE TEMAS\n\n✅ No encontré temas vacíos registrados por el bot.",
+      Markup.inlineKeyboard([[Markup.button.callback("🔙 Panel principal", "ADMIN_MENU")]])
+    );
+  }
+  return ctx.reply(
+    "🧹 ESCANEO DE TEMAS\n\n" +
+    "Encontrados: " + empty.length + " tema(s) sin conversación.\n\n" +
+    "Son temas donde el bot solo registró al usuario y no se ha detectado ninguna conversación.\n\n" +
+    "¿Quieres eliminarlos todos?",
+    Markup.inlineKeyboard([[
+      Markup.button.callback("🗑️ ELIMINAR TODOS", "ADMIN_DELETE_EMPTY"),
+      Markup.button.callback("❌ CANCELAR", "ADMIN_MENU")
+    ]])
+  );
+});
+
+bot.action("ADMIN_DELETE_EMPTY", async (ctx) => {
+  await ctx.answerCbQuery();
+  if (!isAdmin(ctx.from.id)) return;
+  const empty = db.getUsers().filter(u => u.threadId && !u.hasConversation);
+  let deleted = 0;
+  let failed = 0;
+  for (const user of empty) {
+    try {
+      await ctx.telegram.deleteForumTopic(STORE_CHAT_ID, user.threadId);
+      db.deleteUser(user.userId);
+      deleted++;
+    } catch (error) {
+      failed++;
+      console.error("delete empty topic:", user.threadId, error);
+    }
+  }
+  return ctx.editMessageText(
+    "🧹 LIMPIEZA COMPLETADA\n\n" +
+    "🗑️ Eliminados: " + deleted + "\n" +
+    "⚠️ No eliminados: " + failed + "\n\n" +
+    "Si alguno de esos usuarios vuelve a usar /start o escribe al bot, se creará un tema nuevo.",
+    adminMenu()
+  );
 });
 bot.command("setwelcome", (ctx) => {
   if (!isAdmin(ctx.from.id)) return ctx.reply("⛔ Solo administradores.");
@@ -555,10 +638,27 @@ bot.on("message", async (ctx, next) => {
   if (Number(ctx.chat.id) !== STORE_CHAT_ID || !ctx.message.message_thread_id) return;
   if (ctx.message.text?.startsWith("/")) return;
 
-  const user = db.findByThread(ctx.message.message_thread_id);
+  const user = db.markActivityByThread(ctx.message.message_thread_id);
   if (!user) return;
-  try { await ctx.telegram.copyMessage(user.userId, ctx.chat.id, ctx.message.message_id); }
-  catch (error) { console.error("copy admin:", error); }
+  try {
+    await ctx.telegram.copyMessage(user.userId, ctx.chat.id, ctx.message.message_id);
+  } catch (error) {
+    console.error("copy admin:", error);
+    const description = String(error?.description || error?.message || "").toLowerCase();
+    const blocked = description.includes("bot was blocked by the user") ||
+      description.includes("user is deactivated") ||
+      description.includes("chat not found");
+    if (blocked && !user.blocked) {
+      db.markBlocked(user.userId, true);
+      await ctx.telegram.sendMessage(
+        STORE_CHAT_ID,
+        "🚫 AVISO DE USUARIO\n\n👤 " + fullName(user) +
+        "\n🆔 " + user.userId +
+        "\n\nEl usuario bloqueó al bot o ya no está disponible.\n📊 Se contará en Estadísticas como: «Usuarios que bloquearon al bot».",
+        { message_thread_id: user.threadId }
+      ).catch(() => {});
+    }
+  }
 
   if (next) return next();
 });
