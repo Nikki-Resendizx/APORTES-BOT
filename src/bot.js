@@ -147,34 +147,123 @@ async function sendStoredSource(ctx, source, user, buttons) {
   }
 }
 
+async function fetchProfile(ctx) {
+  const base = ctx.from || {};
+  let chat = {};
+  try { chat = await ctx.telegram.getChat(base.id); } catch (error) { console.error("get user chat:", error); }
+
+  return {
+    userId: base.id,
+    id: base.id,
+    first_name: base.first_name,
+    last_name: base.last_name,
+    username: base.username,
+    is_premium: !!base.is_premium,
+    language_code: base.language_code || "",
+    bio: chat.bio || "",
+  };
+}
+
+async function refreshRegistrationCard(ctx, user) {
+  if (!user?.threadId || !user.registrationMessageId) return;
+  const info = registration(user);
+  const extra = {
+    parse_mode: "HTML",
+    reply_markup: topicModerationKeyboard().reply_markup
+  };
+
+  try {
+    if (user.registrationMessageType === "photo") {
+      await ctx.telegram.editMessageCaption(
+        STORE_CHAT_ID,
+        user.registrationMessageId,
+        undefined,
+        info,
+        extra
+      );
+    } else {
+      await ctx.telegram.editMessageText(
+        STORE_CHAT_ID,
+        user.registrationMessageId,
+        undefined,
+        info,
+        extra
+      );
+    }
+  } catch (error) {
+    const description = String(error?.description || error?.message || "").toLowerCase();
+    if (!description.includes("message is not modified")) {
+      console.error("refresh registration card:", error);
+    }
+  }
+}
+
 async function ensure(ctx) {
   if (!ctx.from || ctx.chat.type !== "private") return null;
   if (db.isBanned(ctx.from.id)) return null;
+
   const previous = db.getUser(ctx.from.id);
   if (previous?.blocked) db.markBlocked(ctx.from.id, false);
+
   let user = db.getUser(ctx.from.id);
-  if (user?.threadId) return user;
+
+  if (user?.threadId) {
+    const profile = await fetchProfile(ctx);
+    user = { ...user, ...profile };
+    db.setUser(ctx.from.id, user);
+    await refreshRegistrationCard(ctx, user);
+    return user;
+  }
 
   const topic = await ctx.telegram.createForumTopic(STORE_CHAT_ID, topicName(ctx.from));
-  user = { userId: ctx.from.id, threadId: topic.message_thread_id, createdAt: new Date().toISOString() };
+  const profile = await fetchProfile(ctx);
+
+  user = {
+    ...profile,
+    threadId: topic.message_thread_id,
+    createdAt: new Date().toISOString(),
+    hasConversation: false
+  };
+
   db.setUser(ctx.from.id, user);
-  const info = registration(ctx.from);
+  const info = registration(user);
 
   try {
     const photos = await ctx.telegram.getUserProfilePhotos(ctx.from.id, { limit: 1 });
-    const opts = { message_thread_id: user.threadId, parse_mode: "HTML" };
-    if (photos.total_count && photos.photos[0]?.[0]) {
-      await ctx.telegram.sendPhoto(STORE_CHAT_ID, photos.photos[0][0].file_id, { ...opts, caption: info, reply_markup: topicModerationKeyboard().reply_markup });
-    } else {
-      await ctx.telegram.sendMessage(STORE_CHAT_ID, info, { ...opts, reply_markup: topicModerationKeyboard().reply_markup });
-    }
-  } catch (error) {
-    console.error("registration notice:", error);
-    await ctx.telegram.sendMessage(STORE_CHAT_ID, info, {
+    const opts = {
       message_thread_id: user.threadId,
       parse_mode: "HTML",
       reply_markup: topicModerationKeyboard().reply_markup
-    }).catch(() => {});
+    };
+
+    if (photos.total_count && photos.photos[0]?.[0]) {
+      const sent = await ctx.telegram.sendPhoto(
+        STORE_CHAT_ID,
+        photos.photos[0][0].file_id,
+        { ...opts, caption: info }
+      );
+      user.registrationMessageId = sent.message_id;
+      user.registrationMessageType = "photo";
+    } else {
+      const sent = await ctx.telegram.sendMessage(STORE_CHAT_ID, info, opts);
+      user.registrationMessageId = sent.message_id;
+      user.registrationMessageType = "text";
+    }
+
+    db.setUser(ctx.from.id, user);
+  } catch (error) {
+    console.error("registration notice:", error);
+    const sent = await ctx.telegram.sendMessage(STORE_CHAT_ID, info, {
+      message_thread_id: user.threadId,
+      parse_mode: "HTML",
+      reply_markup: topicModerationKeyboard().reply_markup
+    }).catch(() => null);
+
+    if (sent) {
+      user.registrationMessageId = sent.message_id;
+      user.registrationMessageType = "text";
+      db.setUser(ctx.from.id, user);
+    }
   }
   return user;
 }
@@ -241,11 +330,14 @@ bot.action("TOPIC_INFO", async (ctx) => {
   if (!user) return ctx.reply("❌ No pude identificar al usuario de este tema.");
   return ctx.reply(
     "ℹ️ INFORMACIÓN DEL USUARIO\n\n" +
-    "👤 " + fullName(user) + "\n" +
-    "🆔 " + user.userId + "\n" +
-    "🧵 Tema: " + user.threadId + "\n" +
-    "📅 Registro: " + (user.createdAt || "Sin dato") + "\n" +
-    "🚫 Estado: " + (db.isBanned(user.userId) ? "Baneado" : "Activo")
+    "📝 Nombre: " + fullName(user) + "\n" +
+    "🔗 Username: " + (user.username ? "@" + user.username : "Sin username") + "\n" +
+    "🆔 ID: " + user.userId + "\n" +
+    "⭐ Premium: " + (user.is_premium ? "Sí" : "No") + "\n" +
+    "🌐 Idioma: " + (user.language_code || "No disponible") + "\n" +
+    "📅 Registro: " + (user.createdAt || "Sin dato") +
+    (user.bio ? "\n\n📖 Biografía:\n" + user.bio : "") +
+    "\n\n🟢 Estado: " + (db.isBanned(user.userId) ? "Baneado" : (user.blocked ? "No disponible" : "Activo"))
   );
 });
 
