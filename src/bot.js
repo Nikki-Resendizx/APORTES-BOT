@@ -15,6 +15,13 @@ const isAdmin = (id) => ADMIN_IDS.includes(Number(id));
 const pending = new Map();
 const albumQueues = new Map();
 
+// Limpieza controlada del registro de usuarios.
+if (process.env.RESET_USER_REGISTRY === "true" && db.getUsers().length) {
+  const total = db.getUsers().length;
+  db.resetUsers();
+  console.log("🧹 Registro de usuarios limpiado:", total);
+}
+
 function queueForward(key, item, flush) {
   let queue = albumQueues.get(key);
   if (!queue) {
@@ -488,6 +495,12 @@ bot.command("info", async (ctx) => {
   await ctx.reply("👤 " + fullName(ctx.from) + "\n🆔 " + ctx.from.id + "\n🧵 Tema: " + (user?.threadId || "no creado"));
 });
 bot.command("status", (ctx) => ctx.reply("🤖 APORTES-BOT activo.\n🕐 " + TIMEZONE));
+bot.command("resetusers", async (ctx) => {
+  if (!isAdmin(ctx.from.id)) return ctx.reply("⛔ Solo administradores.");
+  const total = db.getUsers().length;
+  db.resetUsers();
+  return ctx.reply("🧹 REGISTROS LIMPIADOS\\n\\n👥 Usuarios eliminados del registro: " + total + "\\n\\nLos temas existentes NO se eliminan. Si un usuario vuelve a escribir o usar /start, se registrará de nuevo y se creará un tema nuevo.");
+});
 bot.command("cancel", (ctx) => { pending.delete(ctx.from.id); return ctx.reply("❌ Operación cancelada."); });
 
 bot.command("admin", (ctx) => {
