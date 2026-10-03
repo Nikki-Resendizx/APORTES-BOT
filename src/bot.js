@@ -159,7 +159,7 @@ function adminMenu() {
     [Markup.button.callback("⚡ Respuestas rápidas", "QR_MENU")],
     [Markup.button.callback("🤖 Bots / Clones", "CLONE_MENU")],
     [Markup.button.callback("💎 Premium", "PREMIUM_MENU")],
-    [Markup.button.callback("📋 Registros", "REG_MENU")]
+    [Markup.button.callback("📋 Registros", "REGISTRY_MENU")]
   ]);
 }
 
@@ -547,12 +547,16 @@ bot.action("PREMIUM_PLANS",async ctx=>{
   ];
   return ctx.reply("💎 PLANES PREMIUM\n\nElige una duración:",Markup.inlineKeyboard(prices.map(p=>[Markup.button.callback(p.label+" • "+p.amount+" ⭐","BUY_"+p.payload)]).concat([[Markup.button.callback("🔙 Volver","PREMIUM_MENU")]])));
 });
-for(const [payload,days,amount] of [["premium_30",30,Number(process.env.PREMIUM_1M_STARS||100)],["premium_90",90,Number(process.env.PREMIUM_3M_STARS||250)],["premium_365",365,Number(process.env.PREMIUM_12M_STARS||800)]]){
-  bot.action("BUY_"+payload,async ctx=>{await ctx.answerCbQuery();return ctx.telegram.sendInvoice(ctx.chat.id,"💎 APORTES-BOT Premium","Acceso Premium por "+days+" días.",payload,"","XTR",[{label:"Premium",amount}],"aportes-premium");});
+for(const [payload,days,amount] of [["premium_30",30,Number(process.env.PREMIUM_1M_STARS||100),"1 mes"],["premium_90",90,Number(process.env.PREMIUM_3M_STARS||250),"3 meses"],["premium_365",365,Number(process.env.PREMIUM_12M_STARS||800),"1 año"]]){
+  bot.action("BUY_"+payload,async ctx=>{
+    await ctx.answerCbQuery();
+    registry.logPremiumRequest(ctx.telegram,{userId:ctx.from.id,name:fullName(ctx.from),username:ctx.from.username||"",plan:payload==="premium_30"?"1 mes":payload==="premium_90"?"3 meses":"1 año",method:"Telegram Stars",amount:amount+" ⭐",status:"PENDIENTE",createdAt:new Date().toISOString()}).catch(error=>console.error("registry premium:",error));
+    return ctx.telegram.sendInvoice(ctx.chat.id,"💎 APORTES-BOT Premium","Acceso Premium por "+days+" días.",payload,"","XTR",[{label:"Premium",amount}],"aportes-premium");
+  });
 }
 bot.action("PREMIUM_CODE",async ctx=>{await ctx.answerCbQuery();pending.set(ctx.from.id,{type:"premium_code"});return ctx.reply("🎁 Envía tu código promocional.");});
 bot.on("pre_checkout_query",async ctx=>ctx.answerPreCheckoutQuery(true));
-bot.on("successful_payment",async ctx=>{const p=ctx.message.successful_payment;const days=p.invoice_payload==="premium_90"?90:p.invoice_payload==="premium_365"?365:30;const premium=db.grantPremium(ctx.from.id,days,"telegram_stars");return ctx.reply("💎 PREMIUM ACTIVADO\n\n⏳ Válido hasta: "+premium.expiresAt+"\n\nYa puedes usar las funciones Premium.");});
+bot.on("successful_payment",async ctx=>{const p=ctx.message.successful_payment;const days=p.invoice_payload==="premium_90"?90:p.invoice_payload==="premium_365"?365:30;const premium=db.grantPremium(ctx.from.id,days,"telegram_stars"); registry.logPremiumRequest(ctx.telegram,{userId:ctx.from.id,name:fullName(ctx.from),username:ctx.from.username||"",plan:days+" días",method:"Telegram Stars",amount:p.total_amount+" ⭐",status:"APROBADO",createdAt:new Date().toISOString()}).catch(error=>console.error("registry premium approved:",error)); return ctx.reply("💎 PREMIUM ACTIVADO\n\n⏳ Válido hasta: "+premium.expiresAt+"\n\nYa puedes usar las funciones Premium.");});
 bot.command("vincularregistros", async (ctx) => {
   if (!isAdmin(ctx.from.id)) return ctx.reply("⛔ Solo administradores.");
   if (ctx.chat.type === "private") return ctx.reply("📋 Este comando debe ejecutarse dentro del grupo con Topics que quieres usar para REGISTROS.");
@@ -665,7 +669,7 @@ function registrationMenu() {
   ]);
 }
 
-bot.action("REG_MENU", async (ctx) => {
+bot.action("REGISTRY_MENU", async (ctx) => {
   await ctx.answerCbQuery();
   if (!isAdmin(ctx.from.id)) return;
   return ctx.editMessageText(
