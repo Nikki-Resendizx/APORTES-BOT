@@ -28,13 +28,23 @@ function queueForward(key, item, flush) {
     queue = { items: [], timer: null };
     albumQueues.set(key, queue);
   }
+
   queue.items.push(item);
+
+  // Un álbum llega como varios updates consecutivos. No podemos enviarlo
+  // al primer update: esperamos a que termine de llegar todo el media_group.
+  // 1200 ms evita cortar álbumes cuando Telegram entrega sus mensajes con
+  // pequeños intervalos entre updates.
   clearTimeout(queue.timer);
   queue.timer = setTimeout(async () => {
     albumQueues.delete(key);
-    try { await flush(queue.items); }
-    catch (error) { console.error("forward album:", error); }
-  }, 180);
+    const items = [...queue.items].sort((a, b) => a.messageId - b.messageId);
+    try {
+      await flush(items);
+    } catch (error) {
+      console.error("forward album:", error);
+    }
+  }, 1200);
 }
 
 // Telegram marca los mensajes reenviados con forward_origin (y, en versiones
