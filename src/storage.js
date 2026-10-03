@@ -40,4 +40,5 @@ function markActivityByThread(thread){ const user=findByThread(thread); if(!user
 function getStats(){ const users=Object.values(state.users); return {total:users.length,blocked:users.filter(u=>u.blocked).length,banned:state.bans.length,activeTopics:users.filter(u=>u.threadId).length}; }
 function getUsers(){ return Object.values(state.users); }
 function deleteUser(id){ delete state.users[String(id)]; save(); }
-module.exports={getUser,setUser,findByThread,getWelcome,setWelcome,getWelcomeSource,setWelcomeSource,clearWelcome,getWelcomeButtons,setWelcomeButtons,getRegistrationTemplate,setRegistrationTemplate,getRegistrationButtons,setRegistrationButtons,getQuickResponses,getQuickResponse,setQuickResponse,deleteQuickResponse,isBanned,ban,unban,markBlocked,markActivityByThread,getStats,getUsers,deleteUser};
+function resetUsers(){ state.users={}; state.topicStats={}; save(); }
+module.exports={getUser,setUser,findByThread,getWelcome,setWelcome,getWelcomeSource,setWelcomeSource,clearWelcome,getWelcomeButtons,setWelcomeButtons,getRegistrationTemplate,setRegistrationTemplate,getRegistrationButtons,setRegistrationButtons,getQuickResponses,getQuickResponse,setQuickResponse,deleteQuickResponse,isBanned,ban,unban,markBlocked,markActivityByThread,getStats,getUsers,deleteUser,resetUsers};
