@@ -15,5 +15,5 @@ function vars(text,u){
     .replaceAll("#userid",String(u.id));
 }
 function topicName(u){ return (fullName(u)+" • "+u.id).slice(0,128); }
-function registration(u){ return ["👤 NUEVO USUARIO","",`👤 Nombre: ${mention(u)}`,`🆔 ID: ${u.id}`,`🔗 Username: ${u.username ? "@"+u.username : "Sin username"}`,`⭐ Premium: ${u.is_premium ? "Sí":"No"}`,`📅 Registro: ${stamp()}`,`🌎 Zona horaria: America/Mexico_City`].join("\n"); }
+function registration(u){ return ["👤 NUEVO USUARIO","",`👤 Nombre: ${fullName(u)}`,`🆔 ID: ${u.id}`,`🔗 Username: ${u.username ? "@"+u.username : "Sin username"}`,`⭐ Premium: ${u.is_premium ? "Sí":"No"}`,`📅 Registro: ${stamp()}`,`🌎 Zona horaria: America/Mexico_City`].join("\n"); }
 module.exports={fullName,stamp,vars,topicName,registration};
