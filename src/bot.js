@@ -73,7 +73,7 @@ async function sendWelcome(ctx) {
 
   if (source) {
     try {
-      await ctx.telegram.copyMessage(ctx.chat.id, source.chatId, source.messageId, { reply_markup: welcomeKeyboard().reply_markup });
+      await ctx.telegram.copyMessage(ctx.chat.id, source.chatId, source.messageId, { caption: text, parse_mode: "HTML", reply_markup: welcomeKeyboard().reply_markup });
       return;
     } catch (error) {
       console.error("welcome media:", error);
