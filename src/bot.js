@@ -534,6 +534,13 @@ bot.action("ADMIN_DELETE_EMPTY", async (ctx) => {
     adminMenu()
   );
 });
+async function refreshAllRegistrationCards(ctx) {
+  for (const user of db.getUsers()) {
+    try { await refreshRegistrationCard(ctx, user, user.profilePhotoFileId || ""); }
+    catch (error) { console.error("refresh registration template:", user.userId, error); }
+  }
+}
+
 function registrationMenu() {
   return Markup.inlineKeyboard([
     [Markup.button.callback("📝 Editar plantilla", "REG_EDIT")],
