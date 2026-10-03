@@ -209,6 +209,14 @@ async function ensure(ctx) {
 
   if (user?.threadId) {
     const profile = await fetchProfile(ctx);
+    try {
+      const photos = await ctx.telegram.getUserProfilePhotos(ctx.from.id, { limit: 1 });
+      profile.profilePhotoFileId = photos.total_count && photos.photos[0]?.[0]
+        ? photos.photos[0][0].file_id
+        : "";
+    } catch (error) {
+      console.error("refresh user photo:", error);
+    }
     user = { ...user, ...profile };
     db.setUser(ctx.from.id, user);
     await refreshRegistrationCard(ctx, user);
@@ -217,9 +225,18 @@ async function ensure(ctx) {
 
   const topic = await ctx.telegram.createForumTopic(STORE_CHAT_ID, topicName(ctx.from));
   const profile = await fetchProfile(ctx);
+  let photos = { total_count: 0, photos: [] };
+  try {
+    photos = await ctx.telegram.getUserProfilePhotos(ctx.from.id, { limit: 1 });
+  } catch (error) {
+    console.error("get user photo:", error);
+  }
 
   user = {
     ...profile,
+    profilePhotoFileId: photos.total_count && photos.photos[0]?.[0]
+      ? photos.photos[0][0].file_id
+      : "",
     threadId: topic.message_thread_id,
     createdAt: new Date().toISOString(),
     hasConversation: false
@@ -229,7 +246,6 @@ async function ensure(ctx) {
   const info = registration(user);
 
   try {
-    const photos = await ctx.telegram.getUserProfilePhotos(ctx.from.id, { limit: 1 });
     const opts = {
       message_thread_id: user.threadId,
       parse_mode: "HTML",
