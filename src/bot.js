@@ -164,22 +164,36 @@ async function fetchProfile(ctx) {
   };
 }
 
-async function refreshRegistrationCard(ctx, user) {
+async function refreshRegistrationCard(ctx, user, previousPhotoFileId = "") {
   if (!user?.threadId || !user.registrationMessageId) return;
   const info = registration(user);
-  const extra = {
-    parse_mode: "HTML",
-    reply_markup: topicModerationKeyboard().reply_markup
-  };
+  const reply_markup = topicModerationKeyboard().reply_markup;
 
   try {
+    if (user.profilePhotoFileId && user.profilePhotoFileId !== previousPhotoFileId) {
+      const edited = await ctx.telegram.editMessageMedia(
+        STORE_CHAT_ID,
+        user.registrationMessageId,
+        undefined,
+        {
+          type: "photo",
+          media: user.profilePhotoFileId,
+          caption: info,
+          parse_mode: "HTML"
+        },
+        { reply_markup }
+      );
+      if (user.registrationMessageType !== "photo") user.registrationMessageType = "photo";
+      return edited;
+    }
+
     if (user.registrationMessageType === "photo") {
       await ctx.telegram.editMessageCaption(
         STORE_CHAT_ID,
         user.registrationMessageId,
         undefined,
         info,
-        extra
+        { parse_mode: "HTML", reply_markup }
       );
     } else {
       await ctx.telegram.editMessageText(
@@ -187,7 +201,7 @@ async function refreshRegistrationCard(ctx, user) {
         user.registrationMessageId,
         undefined,
         info,
-        extra
+        { parse_mode: "HTML", reply_markup }
       );
     }
   } catch (error) {
@@ -208,6 +222,7 @@ async function ensure(ctx) {
   let user = db.getUser(ctx.from.id);
 
   if (user?.threadId) {
+    const previousPhotoFileId = user.profilePhotoFileId || "";
     const profile = await fetchProfile(ctx);
     try {
       const photos = await ctx.telegram.getUserProfilePhotos(ctx.from.id, { limit: 1 });
@@ -219,7 +234,8 @@ async function ensure(ctx) {
     }
     user = { ...user, ...profile };
     db.setUser(ctx.from.id, user);
-    await refreshRegistrationCard(ctx, user);
+    await refreshRegistrationCard(ctx, user, previousPhotoFileId);
+    db.setUser(ctx.from.id, user);
     return user;
   }
 
