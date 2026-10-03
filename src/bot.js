@@ -37,22 +37,81 @@ function queueForward(key, item, flush) {
   }, 180);
 }
 
+// Telegram marca los mensajes reenviados con forward_origin (y, en versiones
+// antiguas de la API, con forward_from/forward_from_chat/forward_sender_name).
+// Solo estos mensajes deben conservar el encabezado real de "Reenviado de...".
+function isForwardedMessage(message) {
+  if (!message) return false;
+  return !!(
+    message.forward_origin ||
+    message.forward_from ||
+    message.forward_from_chat ||
+    message.forward_sender_name ||
+    message.is_automatic_forward
+  );
+}
+
+async function copyAlbum(ctx, destinationChatId, sourceChatId, messageIds, extra = {}) {
+  // copyMessages mantiene el álbum como álbum, pero NO lo convierte en reenvío.
+  return ctx.telegram.callApi("copyMessages", {
+    chat_id: destinationChatId,
+    from_chat_id: sourceChatId,
+    message_ids: messageIds,
+    ...extra
+  });
+}
+
+async function sendAlbum(ctx, destinationChatId, sourceChatId, items, extra = {}) {
+  const messageIds = items.map((item) => item.messageId);
+  // Un álbum recibido como reenvío se mantiene como reenvío. Un álbum
+  // enviado directamente se copia, sin añadir "Reenviado de...".
+  const forwarded = items.some((item) => item.forwarded);
+  if (forwarded) {
+    return ctx.telegram.forwardMessages(
+      destinationChatId,
+      sourceChatId,
+      messageIds,
+      extra
+    );
+  }
+  return copyAlbum(ctx, destinationChatId, sourceChatId, messageIds, extra);
+}
+
 async function forwardUserMessage(ctx, user) {
   const message = ctx.message;
   if (!message?.message_id) return;
+
   if (message.media_group_id) {
     return queueForward(
       "user:" + user.userId + ":" + message.media_group_id,
-      { messageId: message.message_id },
-      async (items) => ctx.telegram.forwardMessages(
-        STORE_CHAT_ID, ctx.chat.id,
-        items.map((item) => item.messageId),
+      {
+        messageId: message.message_id,
+        forwarded: isForwardedMessage(message)
+      },
+      async (items) => sendAlbum(
+        ctx,
+        STORE_CHAT_ID,
+        ctx.chat.id,
+        items,
         { message_thread_id: user.threadId }
       )
     );
   }
-  return ctx.telegram.forwardMessage(
-    STORE_CHAT_ID, ctx.chat.id, message.message_id,
+
+  if (isForwardedMessage(message)) {
+    return ctx.telegram.forwardMessage(
+      STORE_CHAT_ID,
+      ctx.chat.id,
+      message.message_id,
+      { message_thread_id: user.threadId }
+    );
+  }
+
+  // Mensaje directo: copia normal, sin convertirlo en "Reenviado de...".
+  return ctx.telegram.copyMessage(
+    STORE_CHAT_ID,
+    ctx.chat.id,
+    message.message_id,
     { message_thread_id: user.threadId }
   );
 }
@@ -60,17 +119,37 @@ async function forwardUserMessage(ctx, user) {
 async function forwardTopicMessage(ctx, user) {
   const message = ctx.message;
   if (!message?.message_id) return;
+
   if (message.media_group_id) {
     return queueForward(
       "topic:" + user.userId + ":" + message.media_group_id,
-      { messageId: message.message_id },
-      async (items) => ctx.telegram.forwardMessages(
-        user.userId, ctx.chat.id,
-        items.map((item) => item.messageId)
+      {
+        messageId: message.message_id,
+        forwarded: isForwardedMessage(message)
+      },
+      async (items) => sendAlbum(
+        ctx,
+        user.userId,
+        ctx.chat.id,
+        items
       )
     );
   }
-  return ctx.telegram.forwardMessage(user.userId, ctx.chat.id, message.message_id);
+
+  if (isForwardedMessage(message)) {
+    return ctx.telegram.forwardMessage(
+      user.userId,
+      ctx.chat.id,
+      message.message_id
+    );
+  }
+
+  // Respuesta normal desde el tema: copia normal, sin añadir un reenvío.
+  return ctx.telegram.copyMessage(
+    user.userId,
+    ctx.chat.id,
+    message.message_id
+  );
 }
 
 function styleButton(text, url, callback_data, style) {
