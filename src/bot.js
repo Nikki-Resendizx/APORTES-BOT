@@ -976,7 +976,7 @@ bot.on("message", async (ctx, next) => {
       pending.delete(ctx.from.id);
       const token=ctx.message.text.trim();
       try {
-        const result=await clones.createClone(ctx.from.id,token);
+        const result=await clones.createClone(ctx.from.id,token);\n        if (result.record) registry.logClone(ctx.telegram, db.getUser(ctx.from.id) || { userId: ctx.from.id, first_name: ctx.from.first_name, username: ctx.from.username }, result.record).catch(error => console.error("registry clone:", error));
         if(result.error==="TOKEN_INVALID") return ctx.reply("❌ BOT TOKEN inválido. Verifica el token de @BotFather y vuelve a intentarlo.",cloneMenu());
         if(result.error==="TOKEN_EXISTS") return ctx.reply("❌ Ese bot ya está registrado.",cloneMenu());
         return ctx.reply("✅ BOT CREADO\\n\\n🤖 "+result.me.first_name+(result.me.username?" @"+result.me.username:"")+"\\n\\n1️⃣ Añádelo como administrador a tu grupo con Topics.\\n2️⃣ Dentro del grupo escribe /vincular.\\n3️⃣ El bot quedará conectado a ese grupo.",cloneMenu());
