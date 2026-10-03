@@ -298,8 +298,33 @@ async function ensure(ctx) {
   let user = db.getUser(ctx.from.id);
 
   if (user?.threadId) {
-    const previousPhotoFileId = user.profilePhotoFileId || "";
-    const profile = await fetchProfile(ctx);
+    // Telegram no envía un evento al bot cuando un admin elimina manualmente un tema.
+    // Validamos el thread sin publicar mensajes. Si ya no existe, se registra como
+    // una nueva conversación y se crea un tema completamente nuevo.
+    let topicExists = true;
+    try {
+      await ctx.telegram.sendChatAction(STORE_CHAT_ID, "typing", {
+        message_thread_id: user.threadId
+      });
+    } catch (error) {
+      const description = String(error?.description || error?.message || "").toLowerCase();
+      const topicGone =
+        description.includes("message thread not found") ||
+        description.includes("topic was deleted") ||
+        description.includes("thread not found") ||
+        description.includes("forum topic not found");
+      if (topicGone) {
+        topicExists = false;
+        console.log("🧹 Tema anterior eliminado; se creará uno nuevo:", user.userId, user.threadId);
+      } else {
+        // Si el error no indica que el tema fue eliminado, no destruimos el registro.
+        console.error("validate user topic:", user.userId, error);
+      }
+    }
+
+    if (topicExists) {
+      const previousPhotoFileId = user.profilePhotoFileId || "";
+      const profile = await fetchProfile(ctx);
     try {
       const photos = await ctx.telegram.getUserProfilePhotos(ctx.from.id, { limit: 1 });
       profile.profilePhotoFileId = photos.total_count && photos.photos[0]?.[0]
@@ -311,9 +336,14 @@ async function ensure(ctx) {
     user = { ...user, ...profile };
     db.setUser(ctx.from.id, user);
     await refreshRegistrationCard(ctx, user, previousPhotoFileId);
-    db.setUser(ctx.from.id, user);
-    return user;
+      db.setUser(ctx.from.id, user);
+      return user;
+    }
   }
+
+  // El tema anterior fue eliminado manualmente desde Telegram. No reutilizamos
+  // su registro: el siguiente contacto genera un registro/conversación nueva.
+  user = null;
 
   const topic = await ctx.telegram.createForumTopic(STORE_CHAT_ID, topicName(ctx.from));
   const profile = await fetchProfile(ctx);
