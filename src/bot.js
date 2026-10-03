@@ -337,7 +337,7 @@ bot.action("QR_PREVIEW", async (ctx) => {
   const source = quick.mediaSource || quick.source;
   if (source && await sendStoredSource(ctx, source, ctx.from, quick.buttons || [])) return;
   const textSource = quick.textSource || (quick.text ? { text: quick.text, entities: [] } : null);
-  if (textSource) await ctx.reply(formatMessageHtml(textSource.text, textSource.entities || [], ctx.from), { parse_mode: "HTML", ...Markup.inlineKeyboard(quick.buttons || []) });
+  if (textSource) await ctx.reply(formatMessageHtml(textSource.text, textSource.entities || [], ctx.from), { parse_mode: "HTML", ...Markup.inlineKeyboard((quick.buttons || []).map((b) => [styleButton(b.text, b.url, b.callback, b.style)])) });
   else await ctx.reply("⚠️ La respuesta aún no tiene contenido.");
 });
 bot.action("QR_DONE", async (ctx) => {
