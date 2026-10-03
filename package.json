@@ -1,15 +1,7 @@
 {
-  "name": "aportes-bot",
-  "version": "1.0.0",
-  "description": "Telegram contact bot for APORTES-BOT",
-  "main": "src/bot.js",
-  "scripts": {
-    "start": "node src/bot.js"
-  },
-  "engines": {
-    "node": ">=20"
-  },
-  "dependencies": {
-    "telegraf": "^4.16.3"
-  }
+  "name":"aportes-bot","version":"1.1.0",
+  "description":"Telegram contact and contribution bot for APORTES-BOT",
+  "main":"src/bot.js","scripts":{"start":"node src/bot.js"},
+  "engines":{"node":">=20"},
+  "dependencies":{"dotenv":"^16.4.7","telegraf":"^4.16.3"}
 }
