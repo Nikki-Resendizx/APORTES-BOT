@@ -3,6 +3,7 @@ require("dotenv").config();
 const { Telegraf, Markup } = require("telegraf");
 const { BOT_TOKEN, STORE_CHAT_ID, ADMIN_IDS, TIMEZONE } = require("./config");
 const db = require("./storage");
+const registry = require("./registry");
 const clones = require("./cloneManager");
 const {
   fullName, varsHtml, hasVars, formatMessageHtml, topicName, registration, DEFAULT_REGISTRATION_TEMPLATE
@@ -157,7 +158,8 @@ function adminMenu() {
     [Markup.button.callback("🧹 Limpiar temas vacíos", "ADMIN_SCAN_EMPTY")],
     [Markup.button.callback("⚡ Respuestas rápidas", "QR_MENU")],
     [Markup.button.callback("🤖 Bots / Clones", "CLONE_MENU")],
-    [Markup.button.callback("💎 Premium", "PREMIUM_MENU")]
+    [Markup.button.callback("💎 Premium", "PREMIUM_MENU")],
+    [Markup.button.callback("📋 Registros", "REG_MENU")]
   ]);
 }
 
@@ -390,6 +392,7 @@ async function ensure(ctx) {
   };
 
   db.setUser(ctx.from.id, user);
+  registry.logUser(ctx.telegram, user).catch(error => console.error("registry user:", error));
   const info = registration(user, db.getRegistrationTemplate());
 
   try {
@@ -550,6 +553,26 @@ for(const [payload,days,amount] of [["premium_30",30,Number(process.env.PREMIUM_
 bot.action("PREMIUM_CODE",async ctx=>{await ctx.answerCbQuery();pending.set(ctx.from.id,{type:"premium_code"});return ctx.reply("🎁 Envía tu código promocional.");});
 bot.on("pre_checkout_query",async ctx=>ctx.answerPreCheckoutQuery(true));
 bot.on("successful_payment",async ctx=>{const p=ctx.message.successful_payment;const days=p.invoice_payload==="premium_90"?90:p.invoice_payload==="premium_365"?365:30;const premium=db.grantPremium(ctx.from.id,days,"telegram_stars");return ctx.reply("💎 PREMIUM ACTIVADO\n\n⏳ Válido hasta: "+premium.expiresAt+"\n\nYa puedes usar las funciones Premium.");});
+bot.command("vincularregistros", async (ctx) => {
+  if (!isAdmin(ctx.from.id)) return ctx.reply("⛔ Solo administradores.");
+  if (ctx.chat.type === "private") return ctx.reply("📋 Este comando debe ejecutarse dentro del grupo con Topics que quieres usar para REGISTROS.");
+  try {
+    const chat = await ctx.telegram.getChat(ctx.chat.id);
+    if (!chat.is_forum) return ctx.reply("❌ Este grupo no tiene Topics/Temas activados.");
+    const cfg = await registry.ensureRegistryTopics(ctx.telegram, ctx.chat.id);
+    return ctx.reply(
+      "✅ GRUPO DE REGISTROS VINCULADO\n\n" +
+      "👤 Usuarios → tema #" + cfg.topics.users + "\n" +
+      "🤖 Clones → tema #" + cfg.topics.clones + "\n" +
+      "💎 Premium → tema #" + cfg.topics.premium + "\n\n" +
+      "Los registros automáticos se enviarán aquí y permanecerán separados del grupo operativo."
+    );
+  } catch (error) {
+    console.error("link registry group:", error);
+    return ctx.reply("❌ No pude configurar el grupo. Verifica que el bot sea administrador y pueda gestionar Topics.");
+  }
+});
+
 bot.command("admin", (ctx) => {
   if (!isAdmin(ctx.from.id)) return ctx.reply("⛔ Solo administradores.");
   return ctx.reply("⚙️ PANEL DE ADMINISTRACIÓN", adminMenu());
