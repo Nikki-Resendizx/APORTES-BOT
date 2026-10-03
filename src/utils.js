@@ -84,6 +84,7 @@ function formatMessageHtml(text,entities,u){
 function topicName(u){ return (fullName(u)+" • "+u.id).slice(0,128); }
 function registration(u){
   const lines = [
+    ...(u.profilePhotoFileId ? ["🖼️ FOTO DE PERFIL", ""] : []),
     "👤 NUEVO USUARIO",
     "",
     `📝 Nombre: ${mention(u)}`,
