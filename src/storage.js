@@ -9,77 +9,58 @@ let state;
 try {
   state = JSON.parse(fs.readFileSync(file, "utf8"));
 } catch {
-  state = {
-    users: {},
-    welcome: null,
-    welcomeSource: null,
-    bans: []
-  };
+  state = { users: {}, welcome: null, welcomeSource: null, welcomeButtons: [], quickResponses: {}, bans: [] };
 }
+
+state.users ||= {};
+state.welcome ||= null;
+state.welcomeSource ||= null;
+state.welcomeButtons ||= [];
+state.quickResponses ||= {};
+state.bans ||= [];
 
 function save() {
   fs.mkdirSync(dir, { recursive: true });
   fs.writeFileSync(file, JSON.stringify(state, null, 2));
 }
 
-function getUser(id) {
-  return state.users[String(id)] || null;
-}
-
-function setUser(id, value) {
-  state.users[String(id)] = value;
-  save();
-}
-
+function getUser(id) { return state.users[String(id)] || null; }
+function setUser(id, value) { state.users[String(id)] = value; save(); }
 function findByThread(thread) {
-  return Object.values(state.users).find(
-    (user) => user.threadId === Number(thread)
-  );
+  return Object.values(state.users).find((user) => user.threadId === Number(thread));
 }
 
-function setWelcomeSource(value) {
-  state.welcomeSource = value;
+function getWelcome() { return state.welcome; }
+function setWelcome(value) { state.welcome = value; save(); }
+function getWelcomeSource() { return state.welcomeSource || null; }
+function setWelcomeSource(value) { state.welcomeSource = value; save(); }
+function clearWelcome() { state.welcome = null; state.welcomeSource = null; state.welcomeButtons = []; save(); }
+
+function getWelcomeButtons() { return state.welcomeButtons || []; }
+function setWelcomeButtons(value) { state.welcomeButtons = value; save(); }
+
+function getQuickResponses() { return state.quickResponses || {}; }
+function getQuickResponse(command) { return state.quickResponses[String(command).toLowerCase()] || null; }
+function setQuickResponse(command, value) {
+  state.quickResponses[String(command).toLowerCase()] = value;
+  save();
+}
+function deleteQuickResponse(command) {
+  delete state.quickResponses[String(command).toLowerCase()];
   save();
 }
 
-function getWelcomeSource() {
-  return state.welcomeSource || null;
-}
-
-function getWelcome() {
-  return state.welcome;
-}
-
-function setWelcome(value) {
-  state.welcome = value;
-  save();
-}
-
-function isBanned(id) {
-  return state.bans.includes(Number(id));
-}
-
+function isBanned(id) { return state.bans.includes(Number(id)); }
 function ban(id) {
-  if (!state.bans.includes(Number(id))) {
-    state.bans.push(Number(id));
-  }
+  if (!state.bans.includes(Number(id))) state.bans.push(Number(id));
   save();
 }
-
-function unban(id) {
-  state.bans = state.bans.filter((value) => value !== Number(id));
-  save();
-}
+function unban(id) { state.bans = state.bans.filter((value) => value !== Number(id)); save(); }
 
 module.exports = {
-  getUser,
-  setUser,
-  findByThread,
-  getWelcome,
-  setWelcome,
-  setWelcomeSource,
-  getWelcomeSource,
-  isBanned,
-  ban,
-  unban
+  getUser, setUser, findByThread,
+  getWelcome, setWelcome, getWelcomeSource, setWelcomeSource, clearWelcome,
+  getWelcomeButtons, setWelcomeButtons,
+  getQuickResponses, getQuickResponse, setQuickResponse, deleteQuickResponse,
+  isBanned, ban, unban
 };
