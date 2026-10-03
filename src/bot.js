@@ -242,7 +242,7 @@ async function fetchProfile(ctx) {
 
 async function refreshRegistrationCard(ctx, user, previousPhotoFileId = "") {
   if (!user?.threadId || !user.registrationMessageId) return;
-  const info = registration(user, db.getRegistrationTemplate());
+  const info = registration({ ...user, banned: db.isBanned(user.userId) }, db.getRegistrationTemplate());
   const reply_markup = registrationKeyboard();
 
   try {
@@ -364,7 +364,7 @@ async function ensure(ctx) {
     const sent = await ctx.telegram.sendMessage(STORE_CHAT_ID, info, {
       message_thread_id: user.threadId,
       parse_mode: "HTML",
-      reply_markup: topicModerationKeyboard().reply_markup
+      reply_markup: registrationKeyboard()
     }).catch(() => null);
 
     if (sent) {
