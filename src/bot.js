@@ -3,6 +3,7 @@ require("dotenv").config();
 const { Telegraf, Markup } = require("telegraf");
 const { BOT_TOKEN, STORE_CHAT_ID, ADMIN_IDS, TIMEZONE } = require("./config");
 const db = require("./storage");
+const clones = require("./cloneManager");
 const {
   fullName, varsHtml, hasVars, formatMessageHtml, topicName, registration, DEFAULT_REGISTRATION_TEMPLATE
 } = require("./utils");
@@ -133,13 +134,30 @@ function welcomeKeyboard() {
   );
 }
 
+function cloneMenu(){
+  return Markup.inlineKeyboard([
+    [Markup.button.callback("➕ Crear bot", "CLONE_CREATE")],
+    [Markup.button.callback("🤖 Mis bots", "CLONE_LIST")],
+    [Markup.button.callback("🔙 Panel principal", "ADMIN_MENU")]
+  ]);
+}
+function premiumMenu(){
+  const p=db.getPremium(0);
+  return Markup.inlineKeyboard([
+    [Markup.button.callback("💎 Ver Premium", "PREMIUM_PLANS")],
+    [Markup.button.callback("🎁 Código promocional", "PREMIUM_CODE")],
+    [Markup.button.callback("🔙 Volver", "ADMIN_MENU")]
+  ]);
+}
 function adminMenu() {
   return Markup.inlineKeyboard([
     [Markup.button.callback("👤 Plantilla de usuario", "REG_MENU")],
     [Markup.button.callback("👋 Bienvenida", "W_MENU")],
     [Markup.button.callback("📊 Estadísticas", "ADMIN_STATS")],
     [Markup.button.callback("🧹 Limpiar temas vacíos", "ADMIN_SCAN_EMPTY")],
-    [Markup.button.callback("⚡ Respuestas rápidas", "QR_MENU")]
+    [Markup.button.callback("⚡ Respuestas rápidas", "QR_MENU")],
+    [Markup.button.callback("🤖 Bots / Clones", "CLONE_MENU")],
+    [Markup.button.callback("💎 Premium", "PREMIUM_MENU")]
   ]);
 }
 
@@ -503,6 +521,31 @@ bot.command("resetusers", async (ctx) => {
 });
 bot.command("cancel", (ctx) => { pending.delete(ctx.from.id); return ctx.reply("❌ Operación cancelada."); });
 
+bot.command("crearbot", async (ctx) => {
+  const list=db.getUserClones(ctx.from.id);
+  if(list.length>=1 && !clones.premium(ctx.from.id)) return ctx.reply("💎 Esta función requiere PREMIUM para crear más de un bot.\n\nTu plan FREE incluye 1 bot.", Markup.inlineKeyboard([[Markup.button.callback("💎 Ver Premium","PREMIUM_PLANS")]]));
+  pending.set(ctx.from.id,{type:"clone_token"});
+  return ctx.reply("🤖 CREAR MI BOT\n\n1️⃣ Abre @BotFather y crea tu bot.\n2️⃣ Copia el BOT TOKEN.\n3️⃣ Envíamelo aquí.\n\n🔐 El token se utilizará exclusivamente para ejecutar tu bot.\n\nDespués tendrás que añadir tu bot como administrador de un grupo con Topics y escribir /vincular dentro del grupo.",Markup.inlineKeyboard([[Markup.button.callback("❌ Cancelar","ADMIN_MENU")]]));
+});
+bot.action("CLONE_MENU",async ctx=>{await ctx.answerCbQuery();if(!isAdmin(ctx.from.id)) return ctx.editMessageText("⛔ Solo administradores.");return ctx.editMessageText("🤖 BOTS / CLONES\n\nCrea y administra bots independientes desde Telegram.",cloneMenu());});
+bot.action("CLONE_CREATE",async ctx=>{await ctx.answerCbQuery();if(!isAdmin(ctx.from.id)) return; if(db.getUserClones(ctx.from.id).length>=1&&!clones.premium(ctx.from.id)) return ctx.reply("💎 Tu plan FREE permite 1 bot. Actualiza a PREMIUM para crear más.",Markup.inlineKeyboard([[Markup.button.callback("💎 Ver Premium","PREMIUM_PLANS")]])); pending.set(ctx.from.id,{type:"clone_token"});return ctx.reply("🤖 Envía ahora el BOT TOKEN creado con @BotFather.");});
+bot.action("CLONE_LIST",async ctx=>{await ctx.answerCbQuery();if(!isAdmin(ctx.from.id)) return;const list=db.getUserClones(ctx.from.id);if(!list.length)return ctx.reply("🤖 No tienes bots creados todavía.",cloneMenu());return ctx.reply("🤖 MIS BOTS\n\n"+list.map((x,i)=>(i+1)+". "+x.name+"\n   🆔 "+x.botId+"\n   🧵 "+(x.storeChatId||"Sin grupo")+"\n   📌 "+x.status).join("\n\n"),cloneMenu());});
+bot.action("PREMIUM_MENU",async ctx=>{await ctx.answerCbQuery();return ctx.reply("💎 PREMIUM\n\nPlan actual: "+(db.getPremium(ctx.from.id).active?"💎 PREMIUM":"🆓 FREE")+"\n\nDesbloquea bots adicionales y funciones avanzadas.",premiumMenu());});
+bot.action("PREMIUM_PLANS",async ctx=>{
+  await ctx.answerCbQuery();
+  const prices=[
+    {label:"💎 Premium 1 mes",amount:Number(process.env.PREMIUM_1M_STARS||100),payload:"premium_30"},
+    {label:"💎 Premium 3 meses",amount:Number(process.env.PREMIUM_3M_STARS||250),payload:"premium_90"},
+    {label:"💎 Premium 1 año",amount:Number(process.env.PREMIUM_12M_STARS||800),payload:"premium_365"}
+  ];
+  return ctx.reply("💎 PLANES PREMIUM\n\nElige una duración:",Markup.inlineKeyboard(prices.map(p=>[Markup.button.callback(p.label+" • "+p.amount+" ⭐","BUY_"+p.payload)]).concat([[Markup.button.callback("🔙 Volver","PREMIUM_MENU")]])));
+});
+for(const [payload,days,amount] of [["premium_30",30,Number(process.env.PREMIUM_1M_STARS||100)],["premium_90",90,Number(process.env.PREMIUM_3M_STARS||250)],["premium_365",365,Number(process.env.PREMIUM_12M_STARS||800)]]){
+  bot.action("BUY_"+payload,async ctx=>{await ctx.answerCbQuery();return ctx.telegram.sendInvoice(ctx.chat.id,"💎 APORTES-BOT Premium","Acceso Premium por "+days+" días.",payload,"","XTR",[{label:"Premium",amount}],{start_parameter:"aportes-premium"});});
+}
+bot.action("PREMIUM_CODE",async ctx=>{await ctx.answerCbQuery();pending.set(ctx.from.id,{type:"premium_code"});return ctx.reply("🎁 Envía tu código promocional.");});
+bot.on("pre_checkout_query",async ctx=>ctx.answerPreCheckoutQuery(true));
+bot.on("successful_payment",async ctx=>{const p=ctx.message.successful_payment;const days=p.invoice_payload==="premium_90"?90:p.invoice_payload==="premium_365"?365:30;const premium=db.grantPremium(ctx.from.id,days,"telegram_stars");return ctx.reply("💎 PREMIUM ACTIVADO\n\n⏳ Válido hasta: "+premium.expiresAt+"\n\nYa puedes usar las funciones Premium.");});
 bot.command("admin", (ctx) => {
   if (!isAdmin(ctx.from.id)) return ctx.reply("⛔ Solo administradores.");
   return ctx.reply("⚙️ PANEL DE ADMINISTRACIÓN", adminMenu());
@@ -890,6 +933,22 @@ bot.on("message", async (ctx, next) => {
   const p = pending.get(ctx.from?.id);
 
   if (p && isAdmin(ctx.from.id) && ctx.chat.type === "private") {
+    if (p.type === "clone_token" && ctx.message.text) {
+      pending.delete(ctx.from.id);
+      const token=ctx.message.text.trim();
+      try {
+        const result=await clones.createClone(ctx.from.id,token);
+        if(result.error==="TOKEN_INVALID") return ctx.reply("❌ BOT TOKEN inválido. Verifica el token de @BotFather y vuelve a intentarlo.",cloneMenu());
+        if(result.error==="TOKEN_EXISTS") return ctx.reply("❌ Ese bot ya está registrado.",cloneMenu());
+        return ctx.reply("✅ BOT CREADO\n\n🤖 "+result.me.first_name+(result.me.username?" @"+result.me.username:"")+"\n\n1️⃣ Añádelo como administrador a tu grupo con Topics.\n2️⃣ Dentro del grupo escribe /vincular.\n3️⃣ El bot quedará conectado a ese grupo.\n\nDespués podrás administrar el bot desde Telegram.",cloneMenu());
+      } catch(e) { console.error("create clone:",e); return ctx.reply("❌ No pude iniciar el bot. Revisa el token y vuelve a intentarlo."); }
+    }
+    if (p.type === "premium_code" && ctx.message.text) {
+      pending.delete(ctx.from.id);
+      const premium=db.redeemPromoCode(ctx.message.text.trim(),ctx.from.id);
+      return ctx.reply(premium?"🎁 Código válido.\n\n💎 Premium activo hasta: "+premium.expiresAt:"❌ Código inválido o agotado.");
+    }
+
     if (p.type === "registration_template" && (ctx.message.text !== undefined || ctx.message.caption !== undefined)) {
       const source = sourceFromMessage(ctx);
       if (source.media) return ctx.reply("❌ La plantilla es de texto. La foto de perfil se agrega automáticamente al enviar la tarjeta.");
@@ -1041,6 +1100,6 @@ bot.on("message", async (ctx, next) => {
 });
 
 bot.catch((error) => console.error("Telegraf:", error));
-bot.launch({ dropPendingUpdates: false }).then(() => console.log("🤖 APORTES-BOT iniciado."));
+bot.launch({ dropPendingUpdates: false }).then(async () => { console.log("🤖 APORTES-BOT iniciado."); await clones.startAll(); });
 process.once("SIGINT", () => bot.stop("SIGINT"));
 process.once("SIGTERM", () => bot.stop("SIGTERM"));
