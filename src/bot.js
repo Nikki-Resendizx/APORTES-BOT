@@ -620,20 +620,57 @@ bot.action("ADMIN_STATS", async (ctx) => {
   );
 });
 
+function emptyRegisteredTopics() {
+  // Un tema se considera vacío cuando el usuario nunca inició una conversación.
+  // No depende de que el administrador haya escrito algo en el tema.
+  return db.getUsers().filter((u) =>
+    u.threadId &&
+    !u.conversationStartedAt &&
+    !u.hasConversation
+  );
+}
+
 bot.action("ADMIN_SCAN_EMPTY", async (ctx) => {
   await ctx.answerCbQuery();
   if (!isAdmin(ctx.from.id)) return;
-  const empty = db.getUsers().filter(u => u.threadId && !u.hasConversation);
-  if (!empty.length) {
+
+  try {
+    const me = await ctx.telegram.getMe();
+    const member = await ctx.telegram.getChatMember(STORE_CHAT_ID, me.id);
+    const canDelete = member?.status === "creator" ||
+      (member?.status === "administrator" && member?.can_delete_messages);
+
+    if (!canDelete) {
+      return ctx.reply(
+        "❌ NO PUEDO ELIMINAR TEMAS\n\n" +
+        "El bot necesita ser administrador del grupo con permiso para eliminar mensajes/temas.\n\n" +
+        "Activa en Telegram el permiso de administración para eliminar mensajes.",
+        Markup.inlineKeyboard([[Markup.button.callback("🔙 Panel principal", "ADMIN_MENU")]])
+      );
+    }
+  } catch (error) {
+    console.error("check topic delete permissions:", error);
     return ctx.reply(
-      "🧹 ESCANEO DE TEMAS\n\n✅ No encontré temas vacíos registrados por el bot.",
+      "⚠️ No pude comprobar los permisos del bot en el grupo. Revisa que sea administrador y tenga permisos para eliminar mensajes.",
       Markup.inlineKeyboard([[Markup.button.callback("🔙 Panel principal", "ADMIN_MENU")]])
     );
   }
+
+  const empty = emptyRegisteredTopics();
+  if (!empty.length) {
+    return ctx.reply(
+      "🧹 ESCANEO DE TEMAS\n\n" +
+      "✅ No encontré temas vacíos registrados por el bot.\n\n" +
+      "La limpieza considera vacíos los temas donde el usuario todavía no ha enviado ningún mensaje.",
+      Markup.inlineKeyboard([[Markup.button.callback("🔙 Panel principal", "ADMIN_MENU")]])
+    );
+  }
+
   return ctx.reply(
     "🧹 ESCANEO DE TEMAS\n\n" +
     "Encontrados: " + empty.length + " tema(s) sin conversación.\n\n" +
-    "Son temas donde el bot solo registró al usuario y no se ha detectado ninguna conversación.\n\n" +
+    "Son temas creados por el bot donde el usuario todavía no ha enviado ningún mensaje.\n" +
+    "Los mensajes que haya escrito el administrador no impiden la limpieza.\n\n" +
     "¿Quieres eliminarlos todos?",
     Markup.inlineKeyboard([[
       Markup.button.callback("🗑️ ELIMINAR TODOS", "ADMIN_DELETE_EMPTY"),
@@ -645,26 +682,37 @@ bot.action("ADMIN_SCAN_EMPTY", async (ctx) => {
 bot.action("ADMIN_DELETE_EMPTY", async (ctx) => {
   await ctx.answerCbQuery();
   if (!isAdmin(ctx.from.id)) return;
-  const empty = db.getUsers().filter(u => u.threadId && !u.hasConversation);
+
+  const empty = emptyRegisteredTopics();
   let deleted = 0;
   let failed = 0;
+  const errors = [];
+
   for (const user of empty) {
     try {
-      await ctx.telegram.deleteForumTopic(STORE_CHAT_ID, user.threadId);
+      await ctx.telegram.deleteForumTopic(STORE_CHAT_ID, Number(user.threadId));
       db.deleteUser(user.userId);
       deleted++;
     } catch (error) {
       failed++;
+      const description = String(error?.description || error?.message || "Error desconocido");
+      errors.push("• " + user.threadId + ": " + description);
       console.error("delete empty topic:", user.threadId, error);
     }
   }
-  return ctx.editMessageText(
+
+  let result =
     "🧹 LIMPIEZA COMPLETADA\n\n" +
     "🗑️ Eliminados: " + deleted + "\n" +
-    "⚠️ No eliminados: " + failed + "\n\n" +
-    "Si alguno de esos usuarios vuelve a usar /start o escribe al bot, se creará un tema nuevo.",
-    adminMenu()
-  );
+    "⚠️ No eliminados: " + failed;
+
+  if (errors.length) {
+    result += "\n\n❗ ERRORES:\n" + errors.slice(0, 10).join("\n");
+  }
+
+  result += "\n\nSi un usuario vuelve a usar /start o escribe al bot, se creará un tema nuevo.";
+
+  return ctx.editMessageText(result, adminMenu());
 });
 async function refreshAllRegistrationCards(ctx) {
   for (const user of db.getUsers()) {
