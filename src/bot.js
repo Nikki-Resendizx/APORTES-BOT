@@ -1144,8 +1144,17 @@ bot.on("message", async (ctx, next) => {
     const user = await ensure(ctx);
     if (!user) return;
     try {
-      await forwardUserMessage(ctx, user);
-    } catch (error) { console.error("copy user:", error); }
+      const delivered = await forwardUserMessage(ctx, user);
+      if (delivered) {
+        // Solo un mensaje REAL del usuario inicia la conversación.
+        // Las respuestas del administrador no convierten un tema vacío en activo.
+        if (!user.conversationStartedAt) user.conversationStartedAt = new Date().toISOString();
+        user.hasConversation = true;
+        db.setUser(user.userId, user);
+      }
+    } catch (error) {
+      console.error("copy user:", error);
+    }
     return;
   }
 
