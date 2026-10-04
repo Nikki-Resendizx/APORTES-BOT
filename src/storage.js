@@ -9,6 +9,7 @@ state.welcome ||= null;
 state.welcomeSource ||= null;
 state.welcomeButtons ||= [];
 state.quickResponses ||= {};
+state.commandTexts ||= {};
 state.registrationTemplate ||= null;
 state.registrationButtons ||= null;
 state.bans ||= [];
@@ -29,6 +30,10 @@ function setRegistrationTemplate(value){ state.registrationTemplate=value; save(
 function getRegistrationButtons(){ return state.registrationButtons || null; }
 function setRegistrationButtons(value){ state.registrationButtons=value; save(); }
 function getQuickResponses(){ return state.quickResponses || {}; }
+function getCommandText(command){ return state.commandTexts[String(command).toLowerCase()] || null; }
+function setCommandText(command,value){ state.commandTexts[String(command).toLowerCase()]=value; save(); }
+function deleteCommandText(command){ delete state.commandTexts[String(command).toLowerCase()]; save(); }
+function getCommandTexts(){ return state.commandTexts || {}; }
 function getQuickResponse(command){ return state.quickResponses[String(command).toLowerCase()] || null; }
 function setQuickResponse(command,value){ state.quickResponses[String(command).toLowerCase()]={...(state.quickResponses[String(command).toLowerCase()]||{}),...value}; save(); }
 function deleteQuickResponse(command){ delete state.quickResponses[String(command).toLowerCase()]; save(); }
@@ -44,4 +49,4 @@ function getStats(){ const users=Object.values(state.users); return {total:users
 function getUsers(){ return Object.values(state.users); }
 function deleteUser(id){ delete state.users[String(id)]; save(); }
 function resetUsers(){ state.users={}; state.topicStats={}; save(); }
-module.exports={getUser,setUser,findByThread,getWelcome,setWelcome,getWelcomeSource,setWelcomeSource,clearWelcome,getWelcomeButtons,setWelcomeButtons,getRegistrationTemplate,setRegistrationTemplate,getRegistrationButtons,setRegistrationButtons,getQuickResponses,getQuickResponse,setQuickResponse,deleteQuickResponse,isBanned,ban,unban,markBlocked,markActivityByThread,getStats,getUsers,deleteUser,resetUsers};
+module.exports={getUser,setUser,findByThread,getWelcome,setWelcome,getWelcomeSource,setWelcomeSource,clearWelcome,getWelcomeButtons,setWelcomeButtons,getRegistrationTemplate,setRegistrationTemplate,getRegistrationButtons,setRegistrationButtons,getQuickResponses,getQuickResponse,setQuickResponse,deleteQuickResponse,getCommandText,setCommandText,deleteCommandText,getCommandTexts,isBanned,ban,unban,markBlocked,markActivityByThread,getStats,getUsers,deleteUser,resetUsers};
