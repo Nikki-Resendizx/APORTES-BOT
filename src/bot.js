@@ -363,10 +363,37 @@ function sourceHasVars(source) {
   if (hasVars(source.text)) return true;
   if (source.richMessage) {
     try {
-      return /\\{(?:mencion|nombre|username|userid|premium|idioma|registro|biografia|estado|timezone)\\}/i.test(JSON.stringify(source.richMessage));
+      return /\{(?:mencion|nombre|username|userid|premium|idioma|registro|biografia|estado|timezone)\}/i.test(JSON.stringify(source.richMessage));
     } catch {}
   }
   return false;
+}
+
+function richMessageWithVars(richMessage, user) {
+  if (!richMessage) return richMessage;
+  const values = {
+    mencion: fullName(user),
+    nombre: fullName(user),
+    username: user?.username ? "@" + user.username : "Sin username",
+    userid: String(user?.id ?? ""),
+    premium: user?.is_premium ? "Sí" : "No",
+    idioma: user?.language_code || user?.languageCode || "No disponible",
+    registro: user?.createdAt ? new Intl.DateTimeFormat("es-MX", { timeZone: TIMEZONE, dateStyle: "short", timeStyle: "medium", hour12: false }).format(new Date(user.createdAt)) : "",
+    biografia: user?.bio || "",
+    estado: db.isBanned(user?.id) ? "Baneado" : (user?.blocked ? "No disponible" : "Activo"),
+    timezone: TIMEZONE
+  };
+  const replace = (value) => typeof value === "string"
+    ? value.replace(/\{(mencion|nombre|username|userid|premium|idioma|registro|biografia|estado|timezone)\}/gi, (_, key) => values[key.toLowerCase()] ?? "")
+    : value;
+  const walk = (value) => {
+    if (Array.isArray(value)) return value.map(walk);
+    if (value && typeof value === "object") {
+      return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, walk(v)]));
+    }
+    return replace(value);
+  };
+  return walk(richMessage);
 }
 
 function defaultWelcome() {
@@ -398,6 +425,21 @@ async function sendStoredSource(ctx, source, user, buttons) {
       return true;
     } catch (error) {
       console.error("copy stored source:", error);
+    }
+  }
+
+  // Si el ARTÍCULO usa Rich Messages y además contiene variables, mantenemos
+  // la estructura de bloques y sustituimos las variables dentro de sus textos.
+  if (source.richMessage) {
+    try {
+      await ctx.telegram.callApi("sendRichMessage", {
+        chat_id: ctx.chat.id,
+        rich_message: richMessageWithVars(source.richMessage, user),
+        reply_markup
+      });
+      return true;
+    } catch (error) {
+      console.error("send stored rich source with vars:", error);
     }
   }
 
