@@ -277,15 +277,15 @@ function defaultCommandSource(command) {
         "🔞 Contenido exclusivo para mayores de 18 años.",
         "",
         "📌 Importante: Envía únicamente contenido que tengas derecho a compartir y que cumpla con las normas de Telegram y la legislación aplicable."
-      ].join("\\n"),
+      ].join("\n"),
       entities: []
     },
     info: {
-      text: "👤 Mi información\\n\\n📝 Nombre: {nombre}\\n🔗 Username: {username}\\n🆔 ID: {userid}\\n⭐ Premium: {premium}\\n🌐 Idioma: {idioma}",
+      text: "👤 Mi información\n\n📝 Nombre: {nombre}\n🔗 Username: {username}\n🆔 ID: {userid}\n⭐ Premium: {premium}\n🌐 Idioma: {idioma}",
       entities: []
     },
     status: {
-      text: "📊 ESTADO\\n\\n🤖 APORTES-BOT activo.\\n🕐 Zona horaria: {timezone}",
+      text: "📊 ESTADO\n\n🤖 APORTES-BOT activo.\n🕐 Zona horaria: {timezone}",
       entities: []
     },
     cancel: { text: "❌ Operación cancelada.", entities: [] }
@@ -663,7 +663,7 @@ bot.command("resetusers", async (ctx) => {
   if (!isAdmin(ctx.from.id)) return ctx.reply("⛔ Solo administradores.");
   const total = db.getUsers().length;
   db.resetUsers();
-  return ctx.reply("🧹 REGISTROS LIMPIADOS\\n\\n👥 Usuarios eliminados del registro: " + total + "\\n\\nLos temas existentes NO se eliminan. Si un usuario vuelve a escribir o usar /start, se registrará de nuevo y se creará un tema nuevo.");
+  return ctx.reply("🧹 REGISTROS LIMPIADOS\n\n👥 Usuarios eliminados del registro: " + total + "\n\nLos temas existentes NO se eliminan. Si un usuario vuelve a escribir o usar /start, se registrará de nuevo y se creará un tema nuevo.");
 });
 bot.command("cancel", (ctx) => {
   pending.delete(ctx.from.id);
@@ -926,10 +926,10 @@ bot.action("CMD_MENU", async (ctx) => {
   await ctx.answerCbQuery();
   if (!isAdmin(ctx.from.id)) return;
   return ctx.editMessageText(
-    "📝 PLANTILLAS Y TEXTOS\\n\\n" +
-    "Edita el contenido de los comandos directamente desde Telegram.\\n\\n" +
-    "✨ Envía el texto ya formateado y el bot guardará las entidades nativas de Telegram.\\n" +
-    "🔥 Se conservan especialmente ARTÍCULOS / BLOQUES DESPLEGABLES, además de enlaces, citas, spoilers, código, listas y emojis personalizados.\\n\\n" +
+    "📝 PLANTILLAS Y TEXTOS\n\n" +
+    "Edita el contenido de los comandos directamente desde Telegram.\n\n" +
+    "✨ Envía el texto ya formateado y el bot guardará las entidades nativas de Telegram.\n" +
+    "🔥 Se conservan especialmente ARTÍCULOS / BLOQUES DESPLEGABLES, además de enlaces, citas, spoilers, código, listas y emojis personalizados.\n\n" +
     "Si usas variables, el bot reconstruye el formato al sustituirlas.",
     commandTextMenu()
   );
@@ -939,12 +939,12 @@ bot.action("CMD_LIST", async (ctx) => {
   await ctx.answerCbQuery();
   if (!isAdmin(ctx.from.id)) return;
   return ctx.reply(
-    "🤖 COMANDOS DISPONIBLES\\n\\n" +
-    "/start → Bienvenida\\n" +
-    "/help → Ayuda\\n" +
-    "/info → Información del usuario\\n" +
-    "/status → Estado del bot\\n" +
-    "/cancel → Cancelar operación\\n\\n" +
+    "🤖 COMANDOS DISPONIBLES\n\n" +
+    "/start → Bienvenida\n" +
+    "/help → Ayuda\n" +
+    "/info → Información del usuario\n" +
+    "/status → Estado del bot\n" +
+    "/cancel → Cancelar operación\n\n" +
     "⚡ Los comandos creados en Respuestas rápidas también admiten este sistema de formato."
   );
 });
@@ -955,15 +955,15 @@ for (const command of ["help", "info", "status", "cancel"]) {
     if (!isAdmin(ctx.from.id)) return;
     pending.set(ctx.from.id, { type: "command_text", command });
     return ctx.reply(
-      "📝 EDITAR /" + command + "\\n\\n" +
-      "Envía UN mensaje exactamente como quieres que lo reciba el usuario.\\n\\n" +
-      "✅ Formato nativo de Telegram\\n" +
-      "🔥 ARTÍCULOS / BLOQUES DESPLEGABLES\\n" +
-      "🔗 Enlaces y citas\\n" +
-      "🙈 Spoilers\\n" +
-      "💻 Código\\n" +
-      "📋 Listas\\n" +
-      "😀 Emojis personalizados\\n\\n" +
+      "📝 EDITAR /" + command + "\n\n" +
+      "Envía UN mensaje exactamente como quieres que lo reciba el usuario.\n\n" +
+      "✅ Formato nativo de Telegram\n" +
+      "🔥 ARTÍCULOS / BLOQUES DESPLEGABLES\n" +
+      "🔗 Enlaces y citas\n" +
+      "🙈 Spoilers\n" +
+      "💻 Código\n" +
+      "📋 Listas\n" +
+      "😀 Emojis personalizados\n\n" +
       "Variables: {mencion} {nombre} {username} {userid} {premium} {idioma} {registro} {biografia} {estado} {timezone}",
       Markup.inlineKeyboard([[Markup.button.callback("❌ Cancelar", "CMD_MENU")]])
     );
