@@ -19,7 +19,7 @@ function varsHtml(text,u){
     .replaceAll("{estado}",escapeHtml(status))
     .replaceAll("{timezone}",escapeHtml("America/Mexico_City"));
 }
-function hasVars(text){ return /\{(?:mencion|nombre|username|userid|premium|idioma|registro|biografia|estado)\}/i.test(String(text||"")); }
+function hasVars(text){ return /\{(?:mencion|nombre|username|userid|premium|idioma|registro|biografia|estado|timezone)\}/i.test(String(text||"")); }
 
 function entityTag(entity, inner){
   const type=entity.type;
