@@ -621,12 +621,19 @@ bot.action("ADMIN_STATS", async (ctx) => {
 });
 
 function emptyRegisteredTopics() {
-  // Un tema se considera vacío cuando el usuario nunca inició una conversación.
-  // No depende de que el administrador haya escrito algo en el tema.
+  // IMPORTANTE:
+  // Un tema NO deja de estar vacío por contener la tarjeta/plantilla de
+  // registro, la foto de perfil o mensajes enviados por administradores.
+  // La única señal válida de conversación iniciada es que el usuario haya
+  // enviado al menos un mensaje privado que el bot haya entregado al tema.
+  //
+  // conversationStartedAt se escribe exclusivamente en el flujo privado,
+  // después de copiar correctamente el mensaje real del usuario.
+  // No usamos hasConversation porque versiones anteriores llegaron a marcarlo
+  // también por actividad dentro del tema.
   return db.getUsers().filter((u) =>
     u.threadId &&
-    !u.conversationStartedAt &&
-    !u.hasConversation
+    !u.conversationStartedAt
   );
 }
 
@@ -1161,7 +1168,9 @@ bot.on("message", async (ctx, next) => {
   if (Number(ctx.chat.id) !== STORE_CHAT_ID || !ctx.message.message_thread_id) return;
   if (ctx.message.text?.startsWith("/")) return;
 
-  const user = db.markActivityByThread(ctx.message.message_thread_id);
+  // La actividad del administrador NO convierte el tema en una conversación.
+  // Solo se considera usado cuando el usuario envía un mensaje desde privado.
+  const user = db.findByThread(ctx.message.message_thread_id);
   if (!user) return;
   try {
     await forwardTopicMessage(ctx, user);
