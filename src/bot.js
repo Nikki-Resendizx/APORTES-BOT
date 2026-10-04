@@ -1052,7 +1052,15 @@ bot.action("W_TXT", async (ctx) => {
   await ctx.answerCbQuery();
   pending.set(ctx.from.id, { type: "welcome_text" });
   return ctx.reply(
-    "📝 Envía el mensaje de bienvenida exactamente como quieres verlo.\n\nTelegram conservará el formato que tenga el mensaje, incluidos artículos/bloques desplegables, citas, enlaces, spoilers, código, listas y emojis personalizados.\n\nVariables: {mencion} {nombre} {username} {userid}",
+    "Envía UN mensaje exactamente como quieres que lo reciba el usuario.\n\n" +
+    "✅ Formato nativo de Telegram\n" +
+    "🔥 ARTÍCULOS / BLOQUES DESPLEGABLES\n" +
+    "🔗 Enlaces y citas\n" +
+    "🙈 Spoilers\n" +
+    "💻 Código\n" +
+    "📋 Listas\n" +
+    "😀 Emojis personalizados\n\n" +
+    "Variables: {mencion} {nombre} {username} {userid} {premium} {idioma} {registro} {biografia} {estado} {timezone}",
     Markup.inlineKeyboard([[Markup.button.callback("❌ Cancelar", "W_MENU")]])
   );
 });
@@ -1158,7 +1166,17 @@ bot.action("QR_TEXT", async (ctx) => {
   const p = pending.get(ctx.from.id);
   if (!p?.command) return ctx.reply("❌ No hay una respuesta en edición.");
   pending.set(ctx.from.id, { ...p, type: "quick_text" });
-  return ctx.reply("📝 Envía el texto. Se conservará el formato exacto de Telegram, incluido el formato de artículos/bloques desplegables, citas, listas, enlaces, código, spoilers y emojis personalizados.");
+  return ctx.reply(
+    "Envía UN mensaje exactamente como quieres que lo reciba el usuario.\n\n" +
+    "✅ Formato nativo de Telegram\n" +
+    "🔥 ARTÍCULOS / BLOQUES DESPLEGABLES\n" +
+    "🔗 Enlaces y citas\n" +
+    "🙈 Spoilers\n" +
+    "💻 Código\n" +
+    "📋 Listas\n" +
+    "😀 Emojis personalizados\n\n" +
+    "Variables: {mencion} {nombre} {username} {userid} {premium} {idioma} {registro} {biografia} {estado} {timezone}",
+  );
 });
 bot.action("QR_MEDIA", async (ctx) => {
   await ctx.answerCbQuery();
