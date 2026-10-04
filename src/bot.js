@@ -226,10 +226,85 @@ function adminMenu() {
   return Markup.inlineKeyboard([
     [Markup.button.callback("👤 Plantilla de usuario", "REG_MENU")],
     [Markup.button.callback("👋 Bienvenida", "W_MENU")],
+    [Markup.button.callback("📝 Plantillas y textos", "CMD_MENU")],
     [Markup.button.callback("📊 Estadísticas", "ADMIN_STATS")],
     [Markup.button.callback("🧹 Limpiar temas vacíos", "ADMIN_SCAN_EMPTY")],
     [Markup.button.callback("⚡ Respuestas rápidas", "QR_MENU")]
   ]);
+}
+
+function defaultCommandSource(command) {
+  const defaults = {
+    help: {
+      text: [
+        "🔥😈𝐀𝐏𝐎𝐑𝐓𝐄𝐒 𝐗𝐗𝐗😈🔥",
+        "Bienvenido. Este bot está destinado a recibir aportes +18 de contenido casero.",
+        "",
+        "📩 ¿QUÉ TIPO DE APORTES RECIBIMOS?",
+        "",
+        "• 📸 Fotos y contenido de imagen",
+        "• 🎥 Videos caseros",
+        "• 🎞️ Álbumes de fotos y videos",
+        "• 🔗 Enlaces relacionados con el aporte",
+        "• 📄 Archivos multimedia",
+        "• 🔄 Contenido reenviado",
+        "",
+        "Tu aporte será recibido y gestionado dentro de un espacio privado de atención.",
+        "",
+        "🤖 COMANDOS DISPONIBLES",
+        "",
+        "/start",
+        "🚀 Iniciar el bot: Crea o recupera tu espacio de atención y muestra el menú principal.",
+        "",
+        "/help",
+        "❓ Ayuda: Muestra esta información, incluyendo los tipos de aportes aceptados y los comandos disponibles.",
+        "",
+        "/info",
+        "👤 Mi información: Muestra la información asociada a tu usuario dentro del bot.",
+        "",
+        "/status",
+        "📊 Estado: Consulta el estado actual de tu registro y atención.",
+        "",
+        "/cancel",
+        "❌ Cancelar: Cancela la operación o proceso que estés realizando actualmente.",
+        "",
+        "📤 ¿CÓMO ENVIAR UN APORTE?",
+        "",
+        "Simplemente utiliza el bot para enviar tu contenido +18 de carácter casero.",
+        "",
+        "Puedes enviar una foto, video, álbum, archivo, enlace o contenido reenviado. No necesitas utilizar un comando especial para cada tipo de contenido.",
+        "",
+        "🔞 Contenido exclusivo para mayores de 18 años.",
+        "",
+        "📌 Importante: Envía únicamente contenido que tengas derecho a compartir y que cumpla con las normas de Telegram y la legislación aplicable."
+      ].join("\\n"),
+      entities: []
+    },
+    info: {
+      text: "👤 Mi información\\n\\n📝 Nombre: {nombre}\\n🔗 Username: {username}\\n🆔 ID: {userid}\\n⭐ Premium: {premium}\\n🌐 Idioma: {idioma}",
+      entities: []
+    },
+    status: {
+      text: "📊 ESTADO\\n\\n🤖 APORTES-BOT activo.\\n🕐 Zona horaria: {timezone}",
+      entities: []
+    },
+    cancel: { text: "❌ Operación cancelada.", entities: [] }
+  };
+  return defaults[command] || { text: "", entities: [] };
+}
+
+function commandTextMenu() {
+  return Markup.inlineKeyboard([
+    [Markup.button.callback("📖 /help", "CMD_EDIT_help"), Markup.button.callback("👤 /info", "CMD_EDIT_info")],
+    [Markup.button.callback("📊 /status", "CMD_EDIT_status"), Markup.button.callback("❌ /cancel", "CMD_EDIT_cancel")],
+    [Markup.button.callback("👋 /start", "W_MENU")],
+    [Markup.button.callback("📋 Ver comandos", "CMD_LIST")],
+    [Markup.button.callback("🔙 Panel principal", "ADMIN_MENU")]
+  ]);
+}
+
+function commandTextSource(command) {
+  return db.getCommandText(command) || defaultCommandSource(command);
 }
 
 function welcomeMenu() {
@@ -516,7 +591,7 @@ async function sendWelcome(ctx) {
 }
 
 bot.start(sendWelcome);
-bot.help((ctx) => ctx.reply("ℹ️ Envía cualquier mensaje para contactar al equipo."));
+bot.help((ctx) => sendStoredSource(ctx, commandTextSource("help"), ctx.from, []));
 bot.action("TOPIC_BAN", async (ctx) => {
   await ctx.answerCbQuery();
   const user = await topicUser(ctx);
@@ -590,7 +665,10 @@ bot.command("resetusers", async (ctx) => {
   db.resetUsers();
   return ctx.reply("🧹 REGISTROS LIMPIADOS\\n\\n👥 Usuarios eliminados del registro: " + total + "\\n\\nLos temas existentes NO se eliminan. Si un usuario vuelve a escribir o usar /start, se registrará de nuevo y se creará un tema nuevo.");
 });
-bot.command("cancel", (ctx) => { pending.delete(ctx.from.id); return ctx.reply("❌ Operación cancelada."); });
+bot.command("cancel", (ctx) => {
+  pending.delete(ctx.from.id);
+  return sendStoredSource(ctx, commandTextSource("cancel"), ctx.from, []);
+});
 
 bot.command("admin", (ctx) => {
   if (!isAdmin(ctx.from.id)) return ctx.reply("⛔ Solo administradores.");
@@ -844,6 +922,54 @@ bot.action("REG_RESET", async (ctx) => {
   return ctx.editMessageText("♻️ Plantilla predeterminada restaurada.", registrationMenu());
 });
 
+bot.action("CMD_MENU", async (ctx) => {
+  await ctx.answerCbQuery();
+  if (!isAdmin(ctx.from.id)) return;
+  return ctx.editMessageText(
+    "📝 PLANTILLAS Y TEXTOS\\n\\n" +
+    "Edita el contenido de los comandos directamente desde Telegram.\\n\\n" +
+    "✨ Envía el texto ya formateado y el bot guardará las entidades nativas de Telegram.\\n" +
+    "🔥 Se conservan especialmente ARTÍCULOS / BLOQUES DESPLEGABLES, además de enlaces, citas, spoilers, código, listas y emojis personalizados.\\n\\n" +
+    "Si usas variables, el bot reconstruye el formato al sustituirlas.",
+    commandTextMenu()
+  );
+});
+
+bot.action("CMD_LIST", async (ctx) => {
+  await ctx.answerCbQuery();
+  if (!isAdmin(ctx.from.id)) return;
+  return ctx.reply(
+    "🤖 COMANDOS DISPONIBLES\\n\\n" +
+    "/start → Bienvenida\\n" +
+    "/help → Ayuda\\n" +
+    "/info → Información del usuario\\n" +
+    "/status → Estado del bot\\n" +
+    "/cancel → Cancelar operación\\n\\n" +
+    "⚡ Los comandos creados en Respuestas rápidas también admiten este sistema de formato."
+  );
+});
+
+for (const command of ["help", "info", "status", "cancel"]) {
+  bot.action("CMD_EDIT_" + command, async (ctx) => {
+    await ctx.answerCbQuery();
+    if (!isAdmin(ctx.from.id)) return;
+    pending.set(ctx.from.id, { type: "command_text", command });
+    return ctx.reply(
+      "📝 EDITAR /" + command + "\\n\\n" +
+      "Envía UN mensaje exactamente como quieres que lo reciba el usuario.\\n\\n" +
+      "✅ Formato nativo de Telegram\\n" +
+      "🔥 ARTÍCULOS / BLOQUES DESPLEGABLES\\n" +
+      "🔗 Enlaces y citas\\n" +
+      "🙈 Spoilers\\n" +
+      "💻 Código\\n" +
+      "📋 Listas\\n" +
+      "😀 Emojis personalizados\\n\\n" +
+      "Variables: {mencion} {nombre} {username} {userid} {premium} {idioma} {registro} {biografia} {estado} {timezone}",
+      Markup.inlineKeyboard([[Markup.button.callback("❌ Cancelar", "CMD_MENU")]])
+    );
+  });
+}
+
 bot.command("setwelcome", (ctx) => {
   if (!isAdmin(ctx.from.id)) return ctx.reply("⛔ Solo administradores.");
   return ctx.reply("👋 CONFIGURAR BIENVENIDA\n\nElige qué quieres configurar:", welcomeMenu());
@@ -1034,6 +1160,22 @@ bot.on("message", async (ctx, next) => {
   const p = pending.get(ctx.from?.id);
 
   if (p && isAdmin(ctx.from.id) && ctx.chat.type === "private") {
+    if (p.type === "command_text" && (ctx.message.text !== undefined || ctx.message.caption !== undefined)) {
+      const source = sourceFromMessage(ctx);
+      if (source.media) return ctx.reply("❌ Este apartado es para texto. Para multimedia usa 👋 Bienvenida o ⚡ Respuestas rápidas.");
+      db.setCommandText(p.command, {
+        text: source.text,
+        entities: source.entities,
+        chatId: source.chatId,
+        messageId: source.messageId
+      });
+      pending.delete(ctx.from.id);
+      return ctx.reply(
+        "✅ /" + p.command + " actualizado. Se conservará el formato de Telegram, incluidos ARTÍCULOS / BLOQUES DESPLEGABLES.",
+        commandTextMenu()
+      );
+    }
+
     if (p.type === "registration_template" && (ctx.message.text !== undefined || ctx.message.caption !== undefined)) {
       const source = sourceFromMessage(ctx);
       if (source.media) return ctx.reply("❌ La plantilla es de texto. La foto de perfil se agrega automáticamente al enviar la tarjeta.");
