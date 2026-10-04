@@ -1256,7 +1256,7 @@ bot.on("message", async (ctx, next) => {
       return ctx.reply("✅ Plantilla de usuario guardada. Se aplicará automáticamente a las nuevas tarjetas y se actualizará en las existentes.", registrationMenu());
     }
 
-    if (p.type === "welcome_text" && (ctx.message.text !== undefined || ctx.message.caption !== undefined)) {
+    if (p.type === "welcome_text" && (ctx.message.text !== undefined || ctx.message.caption !== undefined || ctx.message.rich_message !== undefined)) {
       const source = sourceFromMessage(ctx);
       if (source.media && !source.richMessage) return ctx.reply("❌ Para texto usa solo un mensaje de texto. Para multimedia + texto usa 🖼️ Multimedia.");
       db.setWelcome({ text: source.text, entities: source.entities, richMessage: source.richMessage || null });
@@ -1296,7 +1296,7 @@ bot.on("message", async (ctx, next) => {
       return ctx.reply("2️⃣ Respuesta " + command + " creada. Ahora elige qué configurar:", quickMenu(command));
     }
 
-    if (p.type === "quick_text" && (ctx.message.text !== undefined || ctx.message.caption !== undefined)) {
+    if (p.type === "quick_text" && (ctx.message.text !== undefined || ctx.message.caption !== undefined || ctx.message.rich_message !== undefined)) {
       const source = sourceFromMessage(ctx);
       if (source.media && !source.richMessage) return ctx.reply("❌ Aquí usa solo texto. Para multimedia usa 🖼️ Multimedia + texto.");
       db.setQuickResponse(p.command, { textSource: { text: source.text, entities: source.entities, richMessage: source.richMessage || null, chatId: source.chatId, messageId: source.messageId } });
