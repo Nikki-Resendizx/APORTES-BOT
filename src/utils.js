@@ -16,7 +16,8 @@ function varsHtml(text,u){
     .replaceAll("{idioma}",escapeHtml(u.language_code || u.languageCode || "No disponible"))
     .replaceAll("{registro}",escapeHtml(stamp(u.createdAt || new Date())))
     .replaceAll("{biografia}",bio)
-    .replaceAll("{estado}",escapeHtml(status));
+    .replaceAll("{estado}",escapeHtml(status))
+    .replaceAll("{timezone}",escapeHtml("America/Mexico_City"));
 }
 function hasVars(text){ return /\{(?:mencion|nombre|username|userid|premium|idioma|registro|biografia|estado)\}/i.test(String(text||"")); }
 
