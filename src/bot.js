@@ -338,21 +338,35 @@ function quickButtonMenu() {
 }
 
 function sourceFromMessage(ctx) {
-  const m = ctx.message;
+  const m = ctx.message || {};
   const isMedia = !!(m.photo || m.video || m.document || m.audio || m.voice || m.animation);
   const text = m.text ?? m.caption ?? "";
   const entities = m.entities ?? m.caption_entities ?? [];
+
+  // Telegram 10.x puede entregar contenido creado con el editor de
+  // ARTÍCULOS como Rich Message. En ese caso el formato no necesariamente
+  // viene en message.entities; llega en message.rich_message.
+  const richMessage = m.rich_message || null;
+
   return {
     chatId: ctx.chat.id,
     messageId: m.message_id,
     text,
     entities,
+    richMessage,
     media: isMedia
   };
 }
 
 function sourceHasVars(source) {
-  return !!source && hasVars(source.text);
+  if (!source) return false;
+  if (hasVars(source.text)) return true;
+  if (source.richMessage) {
+    try {
+      return /\\{(?:mencion|nombre|username|userid|premium|idioma|registro|biografia|estado|timezone)\\}/i.test(JSON.stringify(source.richMessage));
+    } catch {}
+  }
+  return false;
 }
 
 function defaultWelcome() {
@@ -365,6 +379,18 @@ function defaultWelcome() {
 async function sendStoredSource(ctx, source, user, buttons) {
   if (!source) return false;
   const reply_markup = keyboardFromButtons(buttons);
+
+  // Si el editor de Telegram entregó un ARTÍCULO/Rich Message, conservarlo
+  // como tal. copyMessage es la vía más fiel porque mantiene exactamente los
+  // bloques, incluido el BLOQUE DESPLEGABLE.
+  if (source.richMessage && !sourceHasVars(source)) {
+    try {
+      await ctx.telegram.copyMessage(ctx.chat.id, source.chatId, source.messageId, { reply_markup });
+      return true;
+    } catch (error) {
+      console.error("copy stored rich source:", error);
+    }
+  }
 
   if (!sourceHasVars(source)) {
     try {
@@ -1160,14 +1186,15 @@ bot.on("message", async (ctx, next) => {
   const p = pending.get(ctx.from?.id);
 
   if (p && isAdmin(ctx.from.id) && ctx.chat.type === "private") {
-    if (p.type === "command_text" && (ctx.message.text !== undefined || ctx.message.caption !== undefined)) {
+    if (p.type === "command_text" && (ctx.message.text !== undefined || ctx.message.caption !== undefined || ctx.message.rich_message !== undefined)) {
       const source = sourceFromMessage(ctx);
-      if (source.media) return ctx.reply("❌ Este apartado es para texto. Para multimedia usa 👋 Bienvenida o ⚡ Respuestas rápidas.");
+      if (source.media && !source.richMessage) return ctx.reply("❌ Este apartado es para texto. Para multimedia usa 👋 Bienvenida o ⚡ Respuestas rápidas.");
       db.setCommandText(p.command, {
         text: source.text,
         entities: source.entities,
         chatId: source.chatId,
-        messageId: source.messageId
+        messageId: source.messageId,
+        richMessage: source.richMessage || null
       });
       pending.delete(ctx.from.id);
       return ctx.reply(
@@ -1189,8 +1216,8 @@ bot.on("message", async (ctx, next) => {
 
     if (p.type === "welcome_text" && (ctx.message.text !== undefined || ctx.message.caption !== undefined)) {
       const source = sourceFromMessage(ctx);
-      if (source.media) return ctx.reply("❌ Para texto usa solo un mensaje de texto. Para multimedia + texto usa 🖼️ Multimedia.");
-      db.setWelcome({ text: source.text, entities: source.entities });
+      if (source.media && !source.richMessage) return ctx.reply("❌ Para texto usa solo un mensaje de texto. Para multimedia + texto usa 🖼️ Multimedia.");
+      db.setWelcome({ text: source.text, entities: source.entities, richMessage: source.richMessage || null });
       db.setWelcomeSource({ ...source, media: false });
       pending.delete(ctx.from.id);
       return ctx.reply("✅ Bienvenida de texto guardada.", welcomeMenu());
@@ -1229,8 +1256,8 @@ bot.on("message", async (ctx, next) => {
 
     if (p.type === "quick_text" && (ctx.message.text !== undefined || ctx.message.caption !== undefined)) {
       const source = sourceFromMessage(ctx);
-      if (source.media) return ctx.reply("❌ Aquí usa solo texto. Para multimedia usa 🖼️ Multimedia + texto.");
-      db.setQuickResponse(p.command, { textSource: { text: source.text, entities: source.entities, chatId: source.chatId, messageId: source.messageId } });
+      if (source.media && !source.richMessage) return ctx.reply("❌ Aquí usa solo texto. Para multimedia usa 🖼️ Multimedia + texto.");
+      db.setQuickResponse(p.command, { textSource: { text: source.text, entities: source.entities, richMessage: source.richMessage || null, chatId: source.chatId, messageId: source.messageId } });
       pending.set(ctx.from.id, { type: "quick_config", command: p.command });
       return ctx.reply("✅ Texto guardado.", quickMenu(p.command));
     }
