@@ -36,7 +36,10 @@ function isBanned(id){ return state.bans.includes(Number(id)); }
 function ban(id){ if(!state.bans.includes(Number(id))) state.bans.push(Number(id)); save(); }
 function unban(id){ state.bans=state.bans.filter(value=>value!==Number(id)); save(); }
 function markBlocked(id,value=true){ const user=getUser(id); if(!user)return; user.blocked=value; if(value)user.blockedAt=new Date().toISOString(); else delete user.blockedAt; setUser(id,user); }
-function markActivityByThread(thread){ const user=findByThread(thread); if(!user)return null; user.hasConversation=true; user.lastActivityAt=new Date().toISOString(); setUser(user.userId,user); return user; }
+// La actividad del tema pertenece al administrador/equipo y NO determina
+// si el usuario inició una conversación. La señal válida se registra desde
+// el chat privado, después de entregar un mensaje real del usuario al tema.
+function markActivityByThread(thread){ return findByThread(thread); }
 function getStats(){ const users=Object.values(state.users); return {total:users.length,blocked:users.filter(u=>u.blocked).length,banned:state.bans.length,activeTopics:users.filter(u=>u.threadId).length}; }
 function getUsers(){ return Object.values(state.users); }
 function deleteUser(id){ delete state.users[String(id)]; save(); }
