@@ -16,13 +16,6 @@ const pending = new Map();
 const albumQueues = new Map();
 const ensureLocks = new Map();
 
-// Limpieza controlada del registro de usuarios.
-if (process.env.RESET_USER_REGISTRY === "true" && db.getUsers().length) {
-  const total = db.getUsers().length;
-  db.resetUsers();
-  console.log("🧹 Registro de usuarios limpiado:", total);
-}
-
 function queueForward(key, item, flush) {
   let queue = albumQueues.get(key);
   if (!queue) {
@@ -850,11 +843,28 @@ bot.action("ADMIN_DELETE_EMPTY", async (ctx) => {
   let failed = 0;
   const errors = [];
 
-  for (const user of empty) {
+  for (const candidate of empty) {
+    // El escaneo y la eliminación no son atómicos. El usuario puede escribir
+    // mientras el administrador confirma. Releemos el registro justo antes
+    // de borrar para no eliminar una conversación que acaba de comenzar.
+    const user = db.getUser(candidate.userId);
+    if (!user || Number(user.threadId) !== Number(candidate.threadId) || user.conversationStartedAt) {
+      continue;
+    }
+    if (ensureLocks.has(Number(user.userId))) continue;
+    const pendingAlbum = [...albumQueues.keys()].some((key) =>
+      key.startsWith("user:" + user.userId + ":")
+    );
+    if (pendingAlbum) continue;
+
     try {
       await ctx.telegram.deleteForumTopic(STORE_CHAT_ID, Number(user.threadId));
-      db.deleteUser(user.userId);
-      deleted++;
+      // Solo eliminamos el registro si sigue apuntando al mismo tema.
+      const current = db.getUser(user.userId);
+      if (current && Number(current.threadId) === Number(user.threadId) && !current.conversationStartedAt) {
+        db.deleteUser(user.userId);
+        deleted++;
+      }
     } catch (error) {
       failed++;
       const description = String(error?.description || error?.message || "Error desconocido");
