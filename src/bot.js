@@ -14,6 +14,7 @@ const bot = new Telegraf(BOT_TOKEN);
 const isAdmin = (id) => ADMIN_IDS.includes(Number(id));
 const pending = new Map();
 const albumQueues = new Map();
+const ensureLocks = new Map();
 
 // Limpieza controlada del registro de usuarios.
 if (process.env.RESET_USER_REGISTRY === "true" && db.getUsers().length) {
@@ -25,26 +26,36 @@ if (process.env.RESET_USER_REGISTRY === "true" && db.getUsers().length) {
 function queueForward(key, item, flush) {
   let queue = albumQueues.get(key);
   if (!queue) {
-    queue = { items: [], timer: null };
+    let resolveDone, rejectDone;
+    queue = {
+      items: new Map(),
+      timer: null,
+      promise: new Promise((resolve, reject) => { resolveDone = resolve; rejectDone = reject; }),
+      resolveDone,
+      rejectDone
+    };
     albumQueues.set(key, queue);
   }
 
-  queue.items.push(item);
-
-  // Un álbum llega como varios updates consecutivos. No podemos enviarlo
-  // al primer update: esperamos a que termine de llegar todo el media_group.
-  // 1200 ms evita cortar álbumes cuando Telegram entrega sus mensajes con
-  // pequeños intervalos entre updates.
+  queue.items.set(item.messageId, item);
   clearTimeout(queue.timer);
   queue.timer = setTimeout(async () => {
-    albumQueues.delete(key);
-    const items = [...queue.items].sort((a, b) => a.messageId - b.messageId);
+    const current = albumQueues.get(key);
+    if (current !== queue) return;
+
+    const items = [...queue.items.values()].sort((a, b) => a.messageId - b.messageId);
     try {
-      await flush(items);
+      const result = await flush(items);
+      queue.resolveDone(result);
     } catch (error) {
       console.error("forward album:", error);
+      queue.rejectDone(error);
+    } finally {
+      if (albumQueues.get(key) === queue) albumQueues.delete(key);
     }
   }, 1200);
+
+  return queue.promise;
 }
 
 // Telegram marca los mensajes reenviados con forward_origin (y, en versiones
@@ -527,7 +538,7 @@ async function refreshRegistrationCard(ctx, user, previousPhotoFileId = "") {
   }
 }
 
-async function ensure(ctx) {
+async function ensureInternal(ctx) {
   if (!ctx.from || ctx.chat.type !== "private") return null;
   if (db.isBanned(ctx.from.id)) return null;
 
@@ -767,20 +778,18 @@ bot.action("ADMIN_STATS", async (ctx) => {
 });
 
 function emptyRegisteredTopics() {
-  // IMPORTANTE:
-  // Un tema NO deja de estar vacío por contener la tarjeta/plantilla de
-  // registro, la foto de perfil o mensajes enviados por administradores.
-  // La única señal válida de conversación iniciada es que el usuario haya
-  // enviado al menos un mensaje privado que el bot haya entregado al tema.
-  //
-  // conversationStartedAt se escribe exclusivamente en el flujo privado,
-  // después de copiar correctamente el mensaje real del usuario.
-  // No usamos hasConversation porque versiones anteriores llegaron a marcarlo
-  // también por actividad dentro del tema.
-  return db.getUsers().filter((u) =>
-    u.threadId &&
-    !u.conversationStartedAt
-  );
+  return db.getUsers().filter((u) => {
+    if (!u.threadId || u.conversationStartedAt) return false;
+
+    const pendingAlbum = [...albumQueues.keys()].some((key) =>
+      key.startsWith("user:" + u.userId + ":")
+    );
+    if (pendingAlbum) return false;
+
+    if (ensureLocks.has(Number(u.userId))) return false;
+
+    return true;
+  });
 }
 
 bot.action("ADMIN_SCAN_EMPTY", async (ctx) => {
@@ -867,6 +876,19 @@ bot.action("ADMIN_DELETE_EMPTY", async (ctx) => {
 
   return ctx.editMessageText(result, adminMenu());
 });
+
+async function ensure(ctx) {
+  const userId = Number(ctx.from?.id);
+  if (!userId) return ensureInternal(ctx);
+  const existing = ensureLocks.get(userId);
+  if (existing) return existing;
+  const promise = ensureInternal(ctx).finally(() => {
+    if (ensureLocks.get(userId) === promise) ensureLocks.delete(userId);
+  });
+  ensureLocks.set(userId, promise);
+  return promise;
+}
+
 async function refreshAllRegistrationCards(ctx) {
   for (const user of db.getUsers()) {
     try { await refreshRegistrationCard(ctx, user, user.profilePhotoFileId || ""); }
