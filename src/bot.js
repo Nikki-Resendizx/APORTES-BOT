@@ -233,6 +233,7 @@ function adminMenu() {
     [Markup.button.callback("📝 Plantillas y textos", "CMD_MENU")],
     [Markup.button.callback("📊 Estadísticas", "ADMIN_STATS")],
     [Markup.button.callback("🧹 Limpiar temas vacíos", "ADMIN_SCAN_EMPTY")],
+    [Markup.button.callback("♻️ Reiniciar bot / liberar RAM", "ADMIN_RESTART_MENU")],
     [Markup.button.callback("⚡ Respuestas rápidas", "QR_MENU")]
   ]);
 }
@@ -784,6 +785,31 @@ function emptyRegisteredTopics() {
     return true;
   });
 }
+
+bot.action("ADMIN_RESTART_MENU", async (ctx) => {
+  await ctx.answerCbQuery();
+  if (!isAdmin(ctx.from.id)) return;
+  return ctx.reply(
+    "♻️ REINICIAR BOT Y LIBERAR RAM\n\n" +
+    "Esto reiniciará el proceso del bot. Los usuarios y configuraciones guardados en data/state.json se conservarán, pero se interrumpirán brevemente las operaciones en curso.\n\n" +
+    "La plataforma de hosting debe tener activado el reinicio automático del proceso para que el bot vuelva a arrancar.",
+    Markup.inlineKeyboard([
+      [Markup.button.callback("♻️ CONFIRMAR REINICIO", "ADMIN_RESTART_CONFIRM")],
+      [Markup.button.callback("❌ Cancelar", "ADMIN_MENU")]
+    ])
+  );
+});
+
+bot.action("ADMIN_RESTART_CONFIRM", async (ctx) => {
+  await ctx.answerCbQuery();
+  if (!isAdmin(ctx.from.id)) return;
+  await ctx.reply("♻️ Reinicio solicitado por el administrador. El bot volverá a iniciar si el hosting tiene reinicio automático.");
+  // Vaciar referencias temporales antes de terminar el proceso.
+  pending.clear();
+  albumQueues.clear();
+  ensureLocks.clear();
+  setTimeout(() => process.exit(0), 800);
+});
 
 bot.action("ADMIN_SCAN_EMPTY", async (ctx) => {
   await ctx.answerCbQuery();
