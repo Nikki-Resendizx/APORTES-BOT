@@ -1,8 +1,7 @@
-// Fill these values before the first deployment.
-// STORE_CHAT_ID is the numeric ID of the Telegram forum group.
-// ADMIN_IDS are Telegram numeric user IDs, not usernames.
-export const STORE_CHAT_ID = 0;
-export const ADMIN_IDS = [];
+// Telegram Serverless configuration for APORTES-BOT.
+// Keep IDs numeric. Never commit bot tokens or Serverless CLI credentials.
+export const STORE_CHAT_ID = -1004256723476;
+export const ADMIN_IDS = [8481421930, 8719034760, 8624574996, 8759521594];
 export const TIMEZONE = 'America/Mexico_City';
 
 export function isAdmin(id) {
